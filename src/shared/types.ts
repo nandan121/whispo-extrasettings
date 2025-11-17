@@ -15,12 +15,17 @@ export type Config = {
 
   openaiApiKey?: string
   openaiBaseUrl?: string
+  openaiSttModel?: string
+  openaiChatModel?: string
 
   groqApiKey?: string
   groqBaseUrl?: string
+  groqSttModel?: string
+  groqChatModel?: string
 
   geminiApiKey?: string
   geminiBaseUrl?: string
+  geminiChatModel?: string
 
   transcriptPostProcessingEnabled?: boolean
   transcriptPostProcessingProviderId?: CHAT_PROVIDER_ID

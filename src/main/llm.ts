@@ -23,7 +23,9 @@ export async function postProcessTranscript(transcript: string) {
     if (!config.geminiApiKey) throw new Error("Gemini API key is required")
 
     const gai = new GoogleGenerativeAI(config.geminiApiKey)
-    const gModel = gai.getGenerativeModel({ model: "gemini-1.5-flash-002" })
+    const gModel = gai.getGenerativeModel({
+      model: config.geminiChatModel || "gemini-1.5-flash-latest",
+    })
 
     const result = await gModel.generateContent([prompt], {
       baseUrl: config.geminiBaseUrl,
@@ -45,7 +47,9 @@ export async function postProcessTranscript(transcript: string) {
     body: JSON.stringify({
       temperature: 0,
       model:
-        chatProviderId === "groq" ? "llama-3.1-70b-versatile" : "gpt-4o-mini",
+        chatProviderId === "groq"
+          ? config.groqChatModel || "llama-3.1-70b-versatile"
+          : config.openaiChatModel || "gpt-4o-mini",
       messages: [
         {
           role: "system",

@@ -49,6 +49,32 @@ export function Component() {
             }}
           />
         </Control>
+
+        <Control label="STT Model" className="px-3">
+          <Input
+            type="text"
+            placeholder="whisper-1"
+            defaultValue={configQuery.data.openaiSttModel}
+            onChange={(e) => {
+              saveConfig({
+                openaiSttModel: e.currentTarget.value,
+              })
+            }}
+          />
+        </Control>
+
+        <Control label="Chat Model" className="px-3">
+          <Input
+            type="text"
+            placeholder="gpt-4o-mini"
+            defaultValue={configQuery.data.openaiChatModel}
+            onChange={(e) => {
+              saveConfig({
+                openaiChatModel: e.currentTarget.value,
+              })
+            }}
+          />
+        </Control>
       </ControlGroup>
 
       <ControlGroup title="Groq">
@@ -76,6 +102,32 @@ export function Component() {
             }}
           />
         </Control>
+
+        <Control label="STT Model" className="px-3">
+          <Input
+            type="text"
+            placeholder="whisper-large-v3"
+            defaultValue={configQuery.data.groqSttModel}
+            onChange={(e) => {
+              saveConfig({
+                groqSttModel: e.currentTarget.value,
+              })
+            }}
+          />
+        </Control>
+
+        <Control label="Chat Model" className="px-3">
+          <Input
+            type="text"
+            placeholder="llama-3.1-70b-versatile"
+            defaultValue={configQuery.data.groqChatModel}
+            onChange={(e) => {
+              saveConfig({
+                groqChatModel: e.currentTarget.value,
+              })
+            }}
+          />
+        </Control>
       </ControlGroup>
 
       <ControlGroup title="Gemini">
@@ -99,6 +151,19 @@ export function Component() {
             onChange={(e) => {
               saveConfig({
                 geminiBaseUrl: e.currentTarget.value,
+              })
+            }}
+          />
+        </Control>
+
+        <Control label="Chat Model" className="px-3">
+          <Input
+            type="text"
+            placeholder="gemini-1.5-flash-latest"
+            defaultValue={configQuery.data.geminiChatModel}
+            onChange={(e) => {
+              saveConfig({
+                geminiChatModel: e.currentTarget.value,
               })
             }}
           />
