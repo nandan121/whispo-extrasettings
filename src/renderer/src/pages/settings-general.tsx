@@ -80,7 +80,11 @@ export function Component() {
             <div>
               {shortcut === "hold-ctrl"
                 ? "Hold Ctrl key to record, release it to finish recording"
-                : "Press Ctrl+/ to start and finish recording"}
+                : shortcut === "ctrl-slash"
+                ? "Press Ctrl+/ to start and finish recording"
+                : shortcut === "ctrl-windows"
+                ? "Press Control+Windows key to start and finish recording"
+                : "Press Control+Alt to start and finish recording"}
             </div>
             <TooltipProvider disableHoverableContent delayDuration={0}>
               <Tooltip>
@@ -112,6 +116,8 @@ export function Component() {
             <SelectContent>
               <SelectItem value="hold-ctrl">Hold Ctrl</SelectItem>
               <SelectItem value="ctrl-slash">Ctrl+{"/"}</SelectItem>
+              <SelectItem value="ctrl-windows">Control+Windows Key</SelectItem>
+              <SelectItem value="ctrl-alt">Control+Alt</SelectItem>
             </SelectContent>
           </Select>
         </Control>

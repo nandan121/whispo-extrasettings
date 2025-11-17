@@ -119,7 +119,7 @@ export function Component() {
         <Control label="Chat Model" className="px-3">
           <Input
             type="text"
-            placeholder="llama-3.1-70b-versatile"
+            placeholder="llama-3.3-70b-versatile"
             defaultValue={configQuery.data.groqChatModel}
             onChange={(e) => {
               saveConfig({
@@ -159,7 +159,7 @@ export function Component() {
         <Control label="Chat Model" className="px-3">
           <Input
             type="text"
-            placeholder="gemini-1.5-flash-latest"
+            placeholder="gemini-flash-latest"
             defaultValue={configQuery.data.geminiChatModel}
             onChange={(e) => {
               saveConfig({
