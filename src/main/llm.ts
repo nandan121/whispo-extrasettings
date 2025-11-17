@@ -24,7 +24,7 @@ export async function postProcessTranscript(transcript: string) {
 
     const gai = new GoogleGenerativeAI(config.geminiApiKey)
     const gModel = gai.getGenerativeModel({
-      model: config.geminiChatModel || "gemini-1.5-flash-latest",
+      model: config.geminiChatModel || "gemini-flash-latest",
     })
 
     const result = await gModel.generateContent([prompt], {
@@ -48,7 +48,7 @@ export async function postProcessTranscript(transcript: string) {
       temperature: 0,
       model:
         chatProviderId === "groq"
-          ? config.groqChatModel || "llama-3.1-70b-versatile"
+          ? config.groqChatModel || "llama-3.3-70b-versatile"
           : config.openaiChatModel || "gpt-4o-mini",
       messages: [
         {

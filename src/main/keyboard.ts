@@ -85,6 +85,8 @@ export function listenToKeyboardEvents() {
   let isHoldingCtrlKey = false
   let startRecordingTimer: NodeJS.Timeout | undefined
   let isPressedCtrlKey = false
+  let isPressedWindowsKey = false
+  let isPressedAltKey = false
 
   if (process.env.IS_MAC) {
     if (!systemPreferences.isTrustedAccessibilityClient(false)) {
@@ -103,6 +105,10 @@ export function listenToKeyboardEvents() {
     if (e.event_type === "KeyPress") {
       if (e.data.key === "ControlLeft") {
         isPressedCtrlKey = true
+      } else if (e.data.key === "MetaLeft") {
+        isPressedWindowsKey = true
+      } else if (e.data.key === "Alt" || e.data.key === "AltGr") {
+        isPressedAltKey = true
       }
 
       if (e.data.key === "Escape" && state.isRecording) {
@@ -114,11 +120,22 @@ export function listenToKeyboardEvents() {
         return
       }
 
-      if (configStore.get().shortcut === "ctrl-slash") {
+      const shortcut = configStore.get().shortcut
+      
+      if (shortcut === "ctrl-slash") {
         if (e.data.key === "Slash" && isPressedCtrlKey) {
           getWindowRendererHandlers("panel")?.startOrFinishRecording.send()
         }
+      } else if (shortcut === "ctrl-windows") {
+        if (e.data.key === "MetaLeft" && isPressedCtrlKey) {
+          getWindowRendererHandlers("panel")?.startOrFinishRecording.send()
+        }
+      } else if (shortcut === "ctrl-alt") {
+        if ((e.data.key === "Alt" || e.data.key === "AltGr") && isPressedCtrlKey) {
+          getWindowRendererHandlers("panel")?.startOrFinishRecording.send()
+        }
       } else {
+        // hold-ctrl shortcut
         if (e.data.key === "ControlLeft") {
           if (hasRecentKeyPress()) {
             console.log("ignore ctrl because other keys are pressed", [
@@ -156,9 +173,17 @@ export function listenToKeyboardEvents() {
 
       if (e.data.key === "ControlLeft") {
         isPressedCtrlKey = false
+      } else if (e.data.key === "MetaLeft") {
+        isPressedWindowsKey = false
+      } else if (e.data.key === "Alt" || e.data.key === "AltGr") {
+        isPressedAltKey = false
       }
 
-      if (configStore.get().shortcut === "ctrl-slash") return
+      const shortcut = configStore.get().shortcut
+
+      if (shortcut === "ctrl-slash" || shortcut === "ctrl-windows" || shortcut === "ctrl-alt") {
+        return
+      }
 
       cancelRecordingTimer()
 
