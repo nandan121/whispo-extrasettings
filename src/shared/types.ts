@@ -9,6 +9,7 @@ export type RecordingHistoryItem = {
 
 export type Config = {
   shortcut?: "hold-ctrl" | "ctrl-slash" | "ctrl-windows" | "ctrl-alt"
+  cleanupShortcut?: "ctrl-shift-c" | "ctrl-alt-c" | "alt-shift-c"
   hideDockIcon?: boolean
 
   sttProviderId?: STT_PROVIDER_ID
@@ -30,4 +31,8 @@ export type Config = {
   transcriptPostProcessingEnabled?: boolean
   transcriptPostProcessingProviderId?: CHAT_PROVIDER_ID
   transcriptPostProcessingPrompt?: string
+
+  textCleanupEnabled?: boolean
+  textCleanupProviderId?: CHAT_PROVIDER_ID
+  textCleanupPromptTemplate?: string
 }

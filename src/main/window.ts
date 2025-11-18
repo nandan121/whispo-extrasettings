@@ -191,7 +191,7 @@ export function showPanelWindow() {
   if (win) {
     const position = getPanelWindowPosition()
     win.setPosition(position.x, position.y)
-    win.showInactive()
+    win.show()
     makeKeyWindow(win)
   }
 }

@@ -51,8 +51,11 @@ export function Component() {
   const sttProviderId: STT_PROVIDER_ID =
     configQuery.data?.sttProviderId || "openai"
   const shortcut = configQuery.data?.shortcut || "hold-ctrl"
+  const cleanupShortcut = configQuery.data?.cleanupShortcut || "ctrl-shift-c"
   const transcriptPostProcessingProviderId: CHAT_PROVIDER_ID =
     configQuery.data?.transcriptPostProcessingProviderId || "openai"
+  const textCleanupProviderId: CHAT_PROVIDER_ID =
+    configQuery.data?.textCleanupProviderId || "openai"
 
   if (!configQuery.data) return null
 
@@ -154,6 +157,10 @@ export function Component() {
             onCheckedChange={(value) => {
               saveConfig({
                 transcriptPostProcessingEnabled: value,
+                // Initialize default prompt when enabling
+                ...(value && !configQuery.data?.transcriptPostProcessingPrompt && {
+                  transcriptPostProcessingPrompt: "Clean up this text: fix grammar, punctuation, and formatting. Do not change meaning or tone. Do not add any more text\n\n{transcript}"
+                }),
               })
             }}
           />
@@ -209,7 +216,8 @@ export function Component() {
                     <Textarea
                       rows={10}
                       defaultValue={
-                        configQuery.data.transcriptPostProcessingPrompt
+                        configQuery.data.transcriptPostProcessingPrompt ||
+                        "Clean up this text: fix grammar, punctuation, and formatting. Do not change meaning or tone. Do not add any more text\n\n{transcript}"
                       }
                       onChange={(e) => {
                         saveConfig({
@@ -220,6 +228,120 @@ export function Component() {
                     <div className="text-sm text-muted-foreground">
                       Use <span className="select-text">{"{transcript}"}</span>{" "}
                       placeholder to insert the original transcript
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </Control>
+          </>
+        )}
+      </ControlGroup>
+
+      <ControlGroup title="Text Cleanup">
+        <Control label="Enabled" className="px-3">
+          <Switch
+            defaultChecked={configQuery.data?.textCleanupEnabled}
+            onCheckedChange={(value) => {
+              saveConfig({
+                textCleanupEnabled: value,
+                // Initialize default prompt template when enabling
+                ...(value && !configQuery.data?.textCleanupPromptTemplate && {
+                  textCleanupPromptTemplate: "\"{command}\" for the following text. The request is only for editing the text. Do not reply back with anything other that text edits requested. Only English, otherwise just return back the below text.\n\n{selected_text}"
+                }),
+              })
+            }}
+          />
+        </Control>
+
+        <Control label="Shortcut" className="px-3">
+          <Select
+            defaultValue={cleanupShortcut}
+            onValueChange={(value) => {
+              saveConfig({
+                cleanupShortcut: value as typeof configQuery.data.cleanupShortcut,
+              })
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ctrl-shift-c">Ctrl+Shift+C</SelectItem>
+              <SelectItem value="ctrl-alt-c">Ctrl+Alt+C</SelectItem>
+              <SelectItem value="alt-shift-c">Alt+Shift+C</SelectItem>
+            </SelectContent>
+          </Select>
+        </Control>
+
+        {configQuery.data?.textCleanupEnabled && (
+          <>
+            <Control label="Provider" className="px-3">
+              <Select
+                defaultValue={textCleanupProviderId}
+                onValueChange={(value) => {
+                  saveConfig({
+                    textCleanupProviderId:
+                      value as CHAT_PROVIDER_ID,
+                  })
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CHAT_PROVIDERS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Control>
+
+            <Control label="Prompt Template" className="px-3">
+              <div className="flex flex-col items-end gap-1 text-right">
+                {configQuery.data.textCleanupPromptTemplate && (
+                  <div className="line-clamp-3 text-sm text-neutral-500 dark:text-neutral-400">
+                    {configQuery.data.textCleanupPromptTemplate}
+                  </div>
+                )}
+                <Dialog>
+                  <DialogTrigger className="" asChild>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 gap-1 px-2"
+                    >
+                      <span className="i-mingcute-edit-2-line"></span>
+                      Edit
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Edit Cleanup Prompt Template</DialogTitle>
+                    </DialogHeader>
+                    <Textarea
+                      rows={6}
+                      defaultValue={
+                        configQuery.data.textCleanupPromptTemplate ||
+                        "\"{command}\" for the following text. The request is only for editing the text. Do not reply back with anything other that text edits requested. Only English, otherwise just return back the below text.\n\n{selected_text}"
+                      }
+                      onChange={(e) => {
+                        saveConfig({
+                          textCleanupPromptTemplate: e.currentTarget.value,
+                        })
+                      }}
+                      onBlur={(e) => {
+                        // Ensure it's saved when focus leaves
+                        saveConfig({
+                          textCleanupPromptTemplate: e.currentTarget.value,
+                        })
+                      }}
+                    ></Textarea>
+                    <div className="text-sm text-muted-foreground">
+                      Use <span className="select-text">{"{selected_text}"}</span>{" "}
+                      and <span className="select-text">{"{command}"}</span>{" "}
+                      placeholders
                     </div>
                   </DialogContent>
                 </Dialog>

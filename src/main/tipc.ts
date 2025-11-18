@@ -13,7 +13,7 @@ import path from "path"
 import { configStore, recordingsFolder } from "./config"
 import { Config, RecordingHistoryItem } from "../shared/types"
 import { RendererHandlers } from "./renderer-handlers"
-import { postProcessTranscript } from "./llm"
+import { postProcessTranscript, processTextCleanup } from "./llm"
 import { state } from "./state"
 import { updateTrayIcon } from "./tray"
 import { isAccessibilityGranted } from "./utils"
@@ -191,14 +191,34 @@ export const router = {
       }
 
       const json: { text: string } = await transcriptResponse.json()
-      const transcript = await postProcessTranscript(json.text)
+      //console.log("[CLEANUP] Raw transcription:", json.text)
+      let finalText = json.text
+
+      // Handle cleanup mode vs normal dictation
+      if (state.isCleanupMode && state.selectedText) {
+        //console.log("[CLEANUP] Cleanup mode - Selected text:", state.selectedText.substring(0, 200) + (state.selectedText.length > 200 ? "..." : ""))
+        //console.log("[CLEANUP] Command:", json.text)
+
+        // Process cleanup: use transcript as command on selected text
+        finalText = await processTextCleanup(state.selectedText, json.text)
+        console.log("[CLEANUP] LLM result:", finalText.substring(0, 200) + (finalText.length > 200 ? "..." : ""))
+
+        // Reset cleanup state
+        state.isCleanupMode = false
+        state.selectedText = ""
+        state.isCleanupRecording = false
+      } else {
+        //console.log("[CLEANUP] Normal dictation mode")
+        // Normal dictation: post-process transcript
+        finalText = await postProcessTranscript(json.text)
+      }
 
       const history = getRecordingHistory()
       const item: RecordingHistoryItem = {
         id: Date.now().toString(),
         createdAt: Date.now(),
         duration: input.duration,
-        transcript,
+        transcript: finalText,
       }
       history.push(item)
       saveRecordingsHitory(history)
@@ -221,9 +241,9 @@ export const router = {
       }
 
       // paste
-      clipboard.writeText(transcript)
+      clipboard.writeText(finalText)
       if (isAccessibilityGranted()) {
-        await writeText(transcript)
+        await writeText(finalText)
       }
     }),
 
@@ -256,6 +276,7 @@ export const router = {
   recordEvent: t.procedure
     .input<{ type: "start" | "end" }>()
     .action(async ({ input }) => {
+      //console.log("[CLEANUP] Recording event:", input.type, "isCleanupMode:", state.isCleanupMode)
       if (input.type === "start") {
         state.isRecording = true
       } else {
