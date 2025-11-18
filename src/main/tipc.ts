@@ -162,7 +162,9 @@ export const router = {
       )
       form.append(
         "model",
-        config.sttProviderId === "groq" ? "whisper-large-v3" : "whisper-1",
+        config.sttProviderId === "groq"
+          ? config.groqSttModel || "whisper-large-v3"
+          : config.openaiSttModel || "whisper-1",
       )
       form.append("response_format", "json")
 
