@@ -34,7 +34,7 @@ const getRecordingHistory = () => {
   }
 }
 
-const saveRecordingsHitory = (history: RecordingHistoryItem[]) => {
+const saveRecordingsHistory = (history: RecordingHistoryItem[]) => {
   fs.writeFileSync(
     path.join(recordingsFolder, "history.json"),
     JSON.stringify(history),
@@ -193,6 +193,7 @@ export const router = {
       const json: { text: string } = await transcriptResponse.json()
       //console.log("[CLEANUP] Raw transcription:", json.text)
       let finalText = json.text
+      let finalTextForHistory = "STT:"+json.text
 
       // Handle cleanup mode vs normal dictation
       if (state.isCleanupMode && state.selectedText) {
@@ -201,6 +202,7 @@ export const router = {
 
         // Process cleanup: use transcript as command on selected text
         finalText = await processTextCleanup(state.selectedText, json.text)
+        finalTextForHistory += "\nSELECTED:"+ state.selectedText+"\nCLEANED:"+finalText
         console.log("[CLEANUP] LLM result:", finalText.substring(0, 200) + (finalText.length > 200 ? "..." : ""))
 
         // Reset cleanup state
@@ -211,6 +213,7 @@ export const router = {
         //console.log("[CLEANUP] Normal dictation mode")
         // Normal dictation: post-process transcript
         finalText = await postProcessTranscript(json.text)
+        finalTextForHistory += "\nPROCESSED:"+finalText
       }
 
       const history = getRecordingHistory()
@@ -218,10 +221,10 @@ export const router = {
         id: Date.now().toString(),
         createdAt: Date.now(),
         duration: input.duration,
-        transcript: finalText,
+        transcript: finalTextForHistory,
       }
       history.push(item)
-      saveRecordingsHitory(history)
+      saveRecordingsHistory(history)
 
       fs.writeFileSync(
         path.join(recordingsFolder, `${item.id}.webm`),
@@ -255,7 +258,7 @@ export const router = {
       const recordings = getRecordingHistory().filter(
         (item) => item.id !== input.id,
       )
-      saveRecordingsHitory(recordings)
+      saveRecordingsHistory(recordings)
       fs.unlinkSync(path.join(recordingsFolder, `${input.id}.webm`))
     }),
 

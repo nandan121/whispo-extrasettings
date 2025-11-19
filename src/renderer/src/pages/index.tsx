@@ -136,7 +136,7 @@ export function Component() {
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
-                        <div className="grow select-text">
+                        <div className="grow select-text whitespace-pre-wrap">
                           {item.transcript}
                         </div>
                         <div className="flex shrink-0 gap-2 text-sm">
