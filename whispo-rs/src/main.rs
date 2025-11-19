@@ -77,71 +77,20 @@ fn write_text(text: &str) {
 }
 
 fn simulate_copy() {
+    use enigo::{Enigo, Keyboard, Settings, Key};
+
+    let mut enigo = Enigo::new(&Settings::default()).unwrap();
+
+    // Simulate Ctrl+C (Cmd+C on Mac)
     #[cfg(target_os = "macos")]
     {
-        use enigo::{Enigo, Settings, Key};
-        let mut enigo = Enigo::new(&Settings::default()).unwrap();
         enigo.key(Key::Meta, enigo::Direction::Press).unwrap();
         enigo.key(Key::C, enigo::Direction::Click).unwrap();
         enigo.key(Key::Meta, enigo::Direction::Release).unwrap();
     }
 
-    #[cfg(target_os = "windows")]
+    #[cfg(not(target_os = "macos"))]
     {
-        use winapi::um::winuser::{SendInput, INPUT, KEYBDINPUT, KEYEVENTF_KEYUP};
-        use std::mem;
-
-        println!("Attempting Ctrl+C simulation using Windows API...");
-
-        const VK_CONTROL: u16 = 0x11;
-        const VK_C: u16 = 0x43;
-
-        unsafe {
-            // Ctrl down
-            let mut input = INPUT {
-                type_: 1, // INPUT_KEYBOARD
-                u: mem::zeroed(),
-            };
-            *input.u.ki_mut() = KEYBDINPUT {
-                wVk: VK_CONTROL,
-                wScan: 0,
-                dwFlags: 0,
-                time: 0,
-                dwExtraInfo: 0,
-            };
-            SendInput(1, &mut input, mem::size_of::<INPUT>() as i32);
-
-            // Small delay
-            std::thread::sleep(std::time::Duration::from_millis(10));
-
-            // C down
-            input.u.ki_mut().wVk = VK_C;
-            SendInput(1, &mut input, mem::size_of::<INPUT>() as i32);
-
-            // Small delay
-            std::thread::sleep(std::time::Duration::from_millis(10));
-
-            // C up
-            input.u.ki_mut().dwFlags = KEYEVENTF_KEYUP;
-            SendInput(1, &mut input, mem::size_of::<INPUT>() as i32);
-
-            // Small delay
-            std::thread::sleep(std::time::Duration::from_millis(10));
-
-            // Ctrl up
-            input.u.ki_mut().wVk = VK_CONTROL;
-            input.u.ki_mut().dwFlags = KEYEVENTF_KEYUP;
-            SendInput(1, &mut input, mem::size_of::<INPUT>() as i32);
-        }
-
-        println!("Ctrl+C simulation completed using Windows API");
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        // Fallback for other systems
-        use enigo::{Enigo, Settings, Key};
-        let mut enigo = Enigo::new(&Settings::default()).unwrap();
         enigo.key(Key::Control, enigo::Direction::Press).unwrap();
         enigo.key(Key::C, enigo::Direction::Click).unwrap();
         enigo.key(Key::Control, enigo::Direction::Release).unwrap();
