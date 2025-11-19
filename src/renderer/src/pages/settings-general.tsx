@@ -33,6 +33,7 @@ import {
   useSaveConfigMutation,
 } from "@renderer/lib/query-client"
 import { Config } from "@shared/types"
+import { ShortcutRecorder } from "@renderer/components/shortcut-recorder"
 
 export function Component() {
   const configQuery = useConfigQuery()
@@ -50,8 +51,10 @@ export function Component() {
 
   const sttProviderId: STT_PROVIDER_ID =
     configQuery.data?.sttProviderId || "openai"
-  const shortcut = configQuery.data?.shortcut || "hold-ctrl"
-  const cleanupShortcut = configQuery.data?.cleanupShortcut || "ctrl-shift-c"
+  const shortcut = configQuery.data?.shortcut || "Ctrl+Space"
+  const shortcutMode = configQuery.data?.shortcutMode || "hold"
+  const cleanupShortcut = configQuery.data?.cleanupShortcut || "Ctrl+Shift+C"
+  const cleanupShortcutMode = configQuery.data?.cleanupShortcutMode || "toggle"
   const transcriptPostProcessingProviderId: CHAT_PROVIDER_ID =
     configQuery.data?.transcriptPostProcessingProviderId || "openai"
   const textCleanupProviderId: CHAT_PROVIDER_ID =
@@ -81,13 +84,7 @@ export function Component() {
         endDescription={
           <div className="flex items-center gap-1">
             <div>
-              {shortcut === "hold-ctrl"
-                ? "Hold Ctrl key to record, release it to finish recording"
-                : shortcut === "ctrl-slash"
-                ? "Press Ctrl+/ to start and finish recording"
-                : shortcut === "ctrl-windows"
-                ? "Press Control+Windows key to start and finish recording"
-                : "Press Control+Alt to start and finish recording"}
+              Click to record a new shortcut.
             </div>
             <TooltipProvider disableHoverableContent delayDuration={0}>
               <Tooltip>
@@ -95,9 +92,7 @@ export function Component() {
                   <span className="i-mingcute-information-fill text-base"></span>
                 </TooltipTrigger>
                 <TooltipContent collisionPadding={5}>
-                  {shortcut === "hold-ctrl"
-                    ? "Press any key to cancel"
-                    : "Press Esc to cancel"}
+                  Press keys to record. Click outside to cancel.
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -105,24 +100,27 @@ export function Component() {
         }
       >
         <Control label="Recording" className="px-3">
-          <Select
-            defaultValue={shortcut}
-            onValueChange={(value) => {
-              saveConfig({
-                shortcut: value as typeof configQuery.data.shortcut,
-              })
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="hold-ctrl">Hold Ctrl</SelectItem>
-              <SelectItem value="ctrl-slash">Ctrl+{"/"}</SelectItem>
-              <SelectItem value="ctrl-windows">Control+Windows Key</SelectItem>
-              <SelectItem value="ctrl-alt">Control+Alt</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex flex-col gap-2 flex-1">
+            <ShortcutRecorder
+              value={shortcut}
+              onChange={(value) => {
+                saveConfig({
+                  shortcut: value,
+                })
+              }}
+            />
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={shortcutMode === "hold"}
+                onCheckedChange={(checked) => {
+                  saveConfig({
+                    shortcutMode: checked ? "hold" : "toggle"
+                  })
+                }}
+              />
+              <span className="text-sm text-muted-foreground">Push to Talk (Hold to Record)</span>
+            </div>
+          </div>
         </Control>
       </ControlGroup>
 
@@ -254,23 +252,27 @@ export function Component() {
         </Control>
 
         <Control label="Shortcut" className="px-3">
-          <Select
-            defaultValue={cleanupShortcut}
-            onValueChange={(value) => {
-              saveConfig({
-                cleanupShortcut: value as typeof configQuery.data.cleanupShortcut,
-              })
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ctrl-shift-c">Ctrl+Shift+C</SelectItem>
-              <SelectItem value="ctrl-alt-c">Ctrl+Alt+C</SelectItem>
-              <SelectItem value="alt-shift-c">Alt+Shift+C</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex flex-col gap-2 flex-1">
+            <ShortcutRecorder
+              value={cleanupShortcut}
+              onChange={(value) => {
+                saveConfig({
+                  cleanupShortcut: value,
+                })
+              }}
+            />
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={cleanupShortcutMode === "hold"}
+                onCheckedChange={(checked) => {
+                  saveConfig({
+                    cleanupShortcutMode: checked ? "hold" : "toggle"
+                  })
+                }}
+              />
+              <span className="text-sm text-muted-foreground">Push to Talk (Hold to Record)</span>
+            </div>
+          </div>
         </Control>
 
         {configQuery.data?.textCleanupEnabled && (

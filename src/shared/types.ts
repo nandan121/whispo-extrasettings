@@ -8,8 +8,10 @@ export type RecordingHistoryItem = {
 }
 
 export type Config = {
-  shortcut?: "hold-ctrl" | "ctrl-slash" | "ctrl-windows" | "ctrl-alt"
-  cleanupShortcut?: "ctrl-shift-c" | "ctrl-alt-c" | "alt-shift-c"
+  shortcut?: string
+  shortcutMode?: "hold" | "toggle"
+  cleanupShortcut?: string
+  cleanupShortcutMode?: "hold" | "toggle"
   hideDockIcon?: boolean
 
   sttProviderId?: STT_PROVIDER_ID

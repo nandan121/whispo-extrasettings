@@ -113,6 +113,7 @@ export function listenToKeyboardEvents() {
   let isPressedWindowsKey = false
   let isPressedAltKey = false
   let isPressedShiftKey = false
+  let isHoldingShortcut = false
 
   if (process.env.IS_MAC) {
     if (!systemPreferences.isTrustedAccessibilityClient(false)) {
@@ -149,125 +150,159 @@ export function listenToKeyboardEvents() {
         return
       }
 
+      // Helper to check if a shortcut matches the current state
+      const checkShortcut = (shortcutConfig: string | undefined, currentKey: string) => {
+        if (!shortcutConfig) return false
+
+        const parts = shortcutConfig.split("+")
+        const requiredModifiers = {
+          ctrl: parts.includes("Ctrl"),
+          alt: parts.includes("Alt"),
+          shift: parts.includes("Shift"),
+          win: parts.includes("Win"),
+        }
+
+        // Check modifiers
+        if (requiredModifiers.ctrl !== isPressedCtrlKey) return false
+        if (requiredModifiers.alt !== isPressedAltKey) return false
+        if (requiredModifiers.shift !== isPressedShiftKey) return false
+        if (requiredModifiers.win !== isPressedWindowsKey) return false
+
+        // Check key
+        // The last part is usually the key, unless it's a modifier-only shortcut (which we shouldn't have ideally)
+        const targetKey = parts[parts.length - 1]
+        
+        // Normalize rdev key to match our recorder format
+        let normalizedCurrentKey = currentKey
+        if (normalizedCurrentKey.startsWith("Key")) normalizedCurrentKey = normalizedCurrentKey.slice(3)
+        
+        // Handle specific mappings for modifiers
+        if (currentKey === "ControlLeft" || currentKey === "ControlRight") normalizedCurrentKey = "Ctrl"
+        if (currentKey === "ShiftLeft" || currentKey === "ShiftRight") normalizedCurrentKey = "Shift"
+        if (currentKey === "Alt" || currentKey === "AltGr") normalizedCurrentKey = "Alt"
+        if (currentKey === "MetaLeft" || currentKey === "MetaRight") normalizedCurrentKey = "Win"
+
+        return normalizedCurrentKey === targetKey
+      }
+
       // Handle cleanup shortcut
       const cleanupShortcut = configStore.get().cleanupShortcut
       const textCleanupEnabled = configStore.get().textCleanupEnabled
-      //console.log("[CLEANUP] Config shortcut:", cleanupShortcut)
+      const cleanupMode = configStore.get().cleanupShortcutMode || "toggle"
+      
       if (cleanupShortcut && textCleanupEnabled) {
-        let cleanupTriggered = false
-
-        if (cleanupShortcut === "ctrl-shift-c" && e.data.key === "KeyC" && isPressedCtrlKey && isPressedShiftKey) {
-          cleanupTriggered = true
-          //console.log("[CLEANUP] Ctrl+Shift+C triggered")
-        } else if (cleanupShortcut === "ctrl-alt-c" && e.data.key === "KeyC" && isPressedCtrlKey && isPressedAltKey) {
-          cleanupTriggered = true
-          //console.log("[CLEANUP] Ctrl+Alt+C triggered")
-        } else if (cleanupShortcut === "alt-shift-c" && e.data.key === "KeyC" && isPressedAltKey && isPressedShiftKey) {
-          cleanupTriggered = true
-          //console.log("[CLEANUP] Alt+Shift+C triggered")
-        }
-
-        if (cleanupTriggered) {
-          //console.log("[CLEANUP] isCleanupRecording:", state.isCleanupRecording)
-          if (!state.isCleanupRecording) {
-            // First press: capture text and start recording
-            //console.log("[CLEANUP] Starting cleanup recording - will wait for key release before copy")
-            state.isCleanupRecording = true // Set flag immediately to prevent multiple triggers
-
-            // Wait for all modifier keys to be released before simulating copy
-            const waitForKeyRelease = () => {
-              if (isPressedAltKey || isPressedShiftKey || isPressedCtrlKey) {
-                // Keys still pressed, wait a bit more
-                setTimeout(waitForKeyRelease, 10)
-              } else {
-                // Keys released, now simulate copy
-                //console.log("[CLEANUP] Keys released, simulating copy")
-                simulateCopy().then(() => {
-                  //console.log("[CLEANUP] Copy simulation successful")
-                  setTimeout(() => {
-                    const selectedText = clipboard.readText()
-                    console.log("[CLEANUP] Captured text:", selectedText.substring(0, 100) + (selectedText.length > 100 ? "..." : ""))
-                    if (selectedText.trim()) {
-                      state.isCleanupMode = true
-                      state.selectedText = selectedText
-                      console.log("[CLEANUP] Starting recording panel")
-                      showPanelWindowAndStartRecording()
-                    } else {
-                      console.log("[CLEANUP] No text captured from clipboard")
-                      // Reset flag if no text captured
+        if (checkShortcut(cleanupShortcut, e.data.key)) {
+           //console.log("[CLEANUP] Cleanup triggered")
+           if (cleanupMode === "toggle") {
+             if (!state.isCleanupRecording) {
+                // Start recording logic (same as before)
+                state.isCleanupRecording = true 
+                const waitForKeyRelease = () => {
+                  if (isPressedAltKey || isPressedShiftKey || isPressedCtrlKey || isPressedWindowsKey) {
+                    setTimeout(waitForKeyRelease, 10)
+                  } else {
+                    simulateCopy().then(() => {
+                      setTimeout(() => {
+                        const selectedText = clipboard.readText()
+                        console.log("[CLEANUP] Captured text:", selectedText.substring(0, 100) + (selectedText.length > 100 ? "..." : ""))
+                        if (selectedText.trim()) {
+                          state.isCleanupMode = true
+                          state.selectedText = selectedText
+                          console.log("[CLEANUP] Starting recording panel")
+                          showPanelWindowAndStartRecording()
+                        } else {
+                          console.log("[CLEANUP] No text captured from clipboard")
+                          state.isCleanupRecording = false
+                          state.isCleanupMode = false
+                          state.selectedText = ""
+                        }
+                      }, 200)
+                    }).catch((error) => {
+                      console.error("[CLEANUP] Failed to simulate copy:", error)
                       state.isCleanupRecording = false
-                      state.isCleanupMode = false
-                      state.selectedText = ""
-                    }
-                  }, 200)
-                }).catch((error) => {
-                  console.error("[CLEANUP] Failed to simulate copy:", error)
-                  // Reset flag on error
-                  state.isCleanupRecording = false
+                    })
+                  }
+                }
+                setTimeout(waitForKeyRelease, 10)
+             } else {
+                // Stop recording
+                console.log("[CLEANUP] Stopping cleanup recording")
+                state.isCleanupRecording = false
+                getWindowRendererHandlers("panel")?.finishRecording.send()
+             }
+           } else {
+             // HOLD MODE
+             if (!state.isCleanupRecording) {
+                state.isCleanupRecording = true
+                simulateCopy().then(() => {
+                    setTimeout(() => {
+                        const selectedText = clipboard.readText()
+                        if (selectedText.trim()) {
+                            state.isCleanupMode = true
+                            state.selectedText = selectedText
+                            showPanelWindowAndStartRecording()
+                        } else {
+                            state.isCleanupRecording = false
+                            state.isCleanupMode = false
+                        }
+                    }, 200)
+                }).catch(() => {
+                    state.isCleanupRecording = false
                 })
-              }
-            }
-
-            // Start waiting for key release
-            setTimeout(waitForKeyRelease, 10)
-          } else {
-            // Second press: stop recording
-            console.log("[CLEANUP] Stopping cleanup recording")
-            state.isCleanupRecording = false
-            getWindowRendererHandlers("panel")?.finishRecording.send()
-          }
-          return
+             }
+           }
+           return
         }
       }
 
       const shortcut = configStore.get().shortcut
+      const shortcutMode = configStore.get().shortcutMode || "hold"
       
-      if (shortcut === "ctrl-slash") {
-        if (e.data.key === "Slash" && isPressedCtrlKey) {
-          getWindowRendererHandlers("panel")?.startOrFinishRecording.send()
+      // Check for custom shortcut
+      if (shortcut && shortcut !== "hold-ctrl") {
+        if (checkShortcut(shortcut, e.data.key)) {
+          if (shortcutMode === "toggle") {
+             getWindowRendererHandlers("panel")?.startOrFinishRecording.send()
+          } else {
+             // Hold mode: Start recording with delay
+             // Prevent repeated triggers if already holding or timer running
+             if (isHoldingShortcut || startRecordingTimer) {
+                 return
+             }
+             
+             if (!state.isRecording) {
+                 // console.log("Starting hold timer...")
+                 startRecordingTimer = setTimeout(() => {
+                     console.log("Hold timer fired, starting recording")
+                     isHoldingShortcut = true
+                     showPanelWindowAndStartRecording()
+                     startRecordingTimer = undefined
+                 }, 600)
+             }
+          }
+          return
         }
-      } else if (shortcut === "ctrl-windows") {
-        if (e.data.key === "MetaLeft" && isPressedCtrlKey) {
-          getWindowRendererHandlers("panel")?.startOrFinishRecording.send()
-        }
-      } else if (shortcut === "ctrl-alt") {
-        if ((e.data.key === "Alt" || e.data.key === "AltGr") && isPressedCtrlKey) {
-          getWindowRendererHandlers("panel")?.startOrFinishRecording.send()
-        }
-      } else {
-        // hold-ctrl shortcut
+      }
+      
+      // Legacy hold-ctrl support
+      if (shortcut === "hold-ctrl") {
         if (e.data.key === "ControlLeft") {
           if (hasRecentKeyPress()) {
-            console.log("ignore ctrl because other keys are pressed", [
-              ...keysPressed.keys(),
-            ])
             return
           }
 
           if (startRecordingTimer) {
-            // console.log('already started recording timer')
             return
           }
 
           startRecordingTimer = setTimeout(() => {
             isHoldingCtrlKey = true
-
             console.log("start recording")
-
             showPanelWindowAndStartRecording()
           }, 800)
-        } else {
-          keysPressed.set(e.data.key, e.time.secs_since_epoch)
-          cancelRecordingTimer()
-
-          // when holding ctrl key, pressing any other key will stop recording
-          if (isHoldingCtrlKey) {
-            stopRecordingAndHidePanelWindow()
-          }
-
-          isHoldingCtrlKey = false
         }
       }
+      
     } else if (e.event_type === "KeyRelease") {
       //console.log("[KEYBOARD] KeyRelease:", e.data.key)
       keysPressed.delete(e.data.key)
@@ -283,8 +318,67 @@ export function listenToKeyboardEvents() {
       }
 
       const shortcut = configStore.get().shortcut
+      const shortcutMode = configStore.get().shortcutMode || "hold"
+      const cleanupShortcut = configStore.get().cleanupShortcut
+      const cleanupShortcutMode = configStore.get().cleanupShortcutMode || "toggle"
 
-      if (shortcut === "ctrl-slash" || shortcut === "ctrl-windows" || shortcut === "ctrl-alt") {
+      // Check if we need to stop recording in Hold mode
+      
+      // 1. Recording Shortcut
+      if (shortcut && shortcutMode === "hold") {
+          // Check if the released key was part of the shortcut
+          const parts = shortcut.split("+")
+          let releasedKeyMatches = false
+          
+          // Check modifiers
+          if (e.data.key === "ControlLeft" && parts.includes("Ctrl")) releasedKeyMatches = true
+          if (e.data.key === "MetaLeft" && parts.includes("Win")) releasedKeyMatches = true
+          if ((e.data.key === "Alt" || e.data.key === "AltGr") && parts.includes("Alt")) releasedKeyMatches = true
+          if ((e.data.key === "ShiftLeft" || e.data.key === "ShiftRight") && parts.includes("Shift")) releasedKeyMatches = true
+          
+          // Check main key
+          let normalizedReleasedKey = e.data.key
+          if (normalizedReleasedKey.startsWith("Key")) normalizedReleasedKey = normalizedReleasedKey.slice(3)
+          if (parts.includes(normalizedReleasedKey)) releasedKeyMatches = true
+          
+          if (releasedKeyMatches) {
+              // Cancel timer if it's running (short press)
+              if (startRecordingTimer) {
+                  console.log("Short press detected, cancelling timer")
+                  clearTimeout(startRecordingTimer)
+                  startRecordingTimer = undefined
+              } else if (isHoldingShortcut) {
+                  // Stop recording if it was running and we were holding
+                  console.log("Key released, stopping recording")
+                  getWindowRendererHandlers("panel")?.finishRecording.send()
+                  isHoldingShortcut = false
+              }
+          }
+      }
+      
+      // 2. Cleanup Shortcut
+      if (cleanupShortcut && cleanupShortcutMode === "hold" && state.isRecording && state.isCleanupMode) {
+          const parts = cleanupShortcut.split("+")
+          let releasedKeyMatches = false
+           // Check modifiers
+          if (e.data.key === "ControlLeft" && parts.includes("Ctrl")) releasedKeyMatches = true
+          if (e.data.key === "MetaLeft" && parts.includes("Win")) releasedKeyMatches = true
+          if ((e.data.key === "Alt" || e.data.key === "AltGr") && parts.includes("Alt")) releasedKeyMatches = true
+          if ((e.data.key === "ShiftLeft" || e.data.key === "ShiftRight") && parts.includes("Shift")) releasedKeyMatches = true
+          
+          // Check main key
+          let normalizedReleasedKey = e.data.key
+          if (normalizedReleasedKey.startsWith("Key")) normalizedReleasedKey = normalizedReleasedKey.slice(3)
+          if (parts.includes(normalizedReleasedKey)) releasedKeyMatches = true
+          
+          if (releasedKeyMatches) {
+              console.log("[CLEANUP] Stopping cleanup recording (Hold mode)")
+              state.isCleanupRecording = false
+              getWindowRendererHandlers("panel")?.finishRecording.send()
+          }
+      }
+
+      if (shortcut && shortcut !== "hold-ctrl") {
         return
       }
 
