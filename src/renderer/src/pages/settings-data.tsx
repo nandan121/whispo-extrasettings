@@ -24,13 +24,15 @@ export function Component() {
   return (
     <div>
       <ControlGroup>
-        <Control label="Clear Older Recordings" className="px-3">
+        <Control label="Clear Recordings older than " className="px-3">
           <div className="flex items-center gap-2">
             <Input
               type="number"
-              className="h-7 w-20"
+              className="h-7 w-10"
               value={days}
               onChange={(e) => setDays(Number(e.target.value))}
+              min={1}
+              max={999}
             />
             <span className="text-sm">days</span>
             <Button
