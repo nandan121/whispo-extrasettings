@@ -250,6 +250,41 @@ export const router = {
       }
     }),
 
+  clearHistory: t.procedure
+    .input<{ days: number }>()
+    .action(async ({ input }) => {
+      if (typeof input.days !== "number") {
+        throw new Error("Invalid input: days must be a number")
+      }
+
+      const days = input.days
+      const threshold = Date.now() - days * 24 * 60 * 60 * 1000 // Calculate timestamp for X days ago
+      const history = getRecordingHistory()
+
+      // Filter out old history items
+      const newHistory = history.filter((item) => item.createdAt >= threshold)
+
+      // Delete old recording files
+      history.forEach((item) => {
+        if (item.createdAt < threshold) {
+          try {
+            fs.unlinkSync(path.join(recordingsFolder, `${item.id}.webm`))
+          } catch (error) {
+            console.error(`Failed to delete recording ${item.id}.webm:`, error)
+          }
+        }
+      })
+
+      saveRecordingsHistory(newHistory)
+
+      // Notify renderer to refresh history
+      const main = WINDOWS.get("main")
+      if (main) {
+        getRendererHandlers<RendererHandlers>(main.webContents)
+          .refreshRecordingHistory.send()
+      }
+    }),
+
   getRecordingHistory: t.procedure.action(async () => getRecordingHistory()),
 
   deleteRecordingItem: t.procedure
