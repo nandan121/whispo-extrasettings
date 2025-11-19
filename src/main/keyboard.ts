@@ -151,8 +151,9 @@ export function listenToKeyboardEvents() {
 
       // Handle cleanup shortcut
       const cleanupShortcut = configStore.get().cleanupShortcut
+      const textCleanupEnabled = configStore.get().textCleanupEnabled
       //console.log("[CLEANUP] Config shortcut:", cleanupShortcut)
-      if (cleanupShortcut) {
+      if (cleanupShortcut && textCleanupEnabled) {
         let cleanupTriggered = false
 
         if (cleanupShortcut === "ctrl-shift-c" && e.data.key === "KeyC" && isPressedCtrlKey && isPressedShiftKey) {
