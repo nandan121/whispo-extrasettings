@@ -236,7 +236,7 @@ export function Component() {
         )}
       </ControlGroup>
 
-      <ControlGroup title="Text Cleanup">
+      <ControlGroup title="Command Mode / Text Cleanup">
         <Control label="Enabled" className="px-3">
           <Switch
             defaultChecked={configQuery.data?.textCleanupEnabled}
