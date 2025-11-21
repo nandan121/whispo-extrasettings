@@ -53,22 +53,22 @@ export const writeText = (text: string) => {
     })
   })
 }
-
 export const simulateCopy = () => {
   return new Promise<void>((resolve, reject) => {
     console.log("[CLEANUP] Calling Rust binary for copy simulation")
     const child = spawn(rdevPath, ["copy"])
 
-    //child.stdout.on("data", (data) => {
-      //console.log(`[CLEANUP] Rust stdout: ${data}`)
-    //})
+    const timeout = setTimeout(() => {
+        child.kill()
+        reject(new Error("Copy simulation timed out"))
+    }, 2000)
 
     child.stderr.on("data", (data) => {
       console.error(`[CLEANUP] Rust stderr: ${data}`)
     })
 
     child.on("close", (code) => {
-      //console.log(`[CLEANUP] Rust process exited with code ${code}`)
+      clearTimeout(timeout)
       if (code === 0) {
         resolve()
       } else {
@@ -79,6 +79,7 @@ export const simulateCopy = () => {
 }
 
 export const detectSelection = async (): Promise<string | null> => {
+  state.isDetectingSelection = true
   try {
     // 1. Save current clipboard
     const originalText = clipboard.readText()
@@ -113,6 +114,11 @@ export const detectSelection = async (): Promise<string | null> => {
   } catch (error) {
     console.error("Error detecting selection:", error)
     return null
+  } finally {
+    // Add a small buffer to ensure we don't catch the tail end of synthetic events
+    setTimeout(() => {
+        state.isDetectingSelection = false
+    }, 100)
   }
 }
 
@@ -147,11 +153,13 @@ const hasRecentKeyPress = () => {
 export function listenToKeyboardEvents() {
   let isHoldingCtrlKey = false
   let startRecordingTimer: NodeJS.Timeout | undefined
+  let startCleanupRecordingTimer: NodeJS.Timeout | undefined
   let isPressedCtrlKey = false
   let isPressedWindowsKey = false
   let isPressedAltKey = false
   let isPressedShiftKey = false
   let isHoldingShortcut = false
+  let isHoldingCleanupShortcut = false
 
   if (process.env.IS_MAC) {
     if (!systemPreferences.isTrustedAccessibilityClient(false)) {
@@ -267,24 +275,41 @@ export function listenToKeyboardEvents() {
                 getWindowRendererHandlers("panel")?.finishRecording.send()
              }
            } else {
-             // HOLD MODE
-             if (!state.isCleanupRecording) {
-                state.isCleanupRecording = true
-                detectSelection().then((selection) => {
+             // HOLD MODE: Start recording with delay
+             // Prevent repeated triggers if already holding or timer running
+             if (isHoldingCleanupShortcut || startCleanupRecordingTimer) {
+                return
+             }
+             
+             if (!state.isRecording) {
+                console.log("[CLEANUP] Starting hold timer...")
+                startCleanupRecordingTimer = setTimeout(() => {
+                  console.log("[CLEANUP] Hold timer fired, detecting selection and starting recording")
+                  isHoldingCleanupShortcut = true
+                  state.isCleanupRecording = true
+                  
+                  detectSelection().then((selection) => {
                     if (selection) {
-                        state.isCleanupMode = true
-                        state.selectedText = selection
-                        state.isCommandMode = false
-                        showPanelWindowAndStartRecording()
+                      console.log("[CLEANUP] Text selected:", selection.substring(0, 50) + "...")
+                      state.isCleanupMode = true
+                      state.selectedText = selection
+                      state.isCommandMode = false
+                      showPanelWindowAndStartRecording()
                     } else {
-                        state.isCleanupMode = false
-                        state.selectedText = ""
-                        state.isCommandMode = true
-                        showPanelWindowAndStartRecording()
+                      console.log("[CLEANUP] No text selected -> Command Mode")
+                      state.isCleanupMode = false
+                      state.selectedText = ""
+                      state.isCommandMode = true
+                      showPanelWindowAndStartRecording()
                     }
-                }).catch(() => {
+                  }).catch((err) => {
+                    console.error("[CLEANUP] Selection detection failed:", err)
                     state.isCleanupRecording = false
-                })
+                    isHoldingCleanupShortcut = false
+                  })
+                  
+                  startCleanupRecordingTimer = undefined
+                }, 300)
              }
            }
            return
@@ -340,6 +365,11 @@ export function listenToKeyboardEvents() {
       }
       
     } else if (e.event_type === "KeyRelease") {
+      // Ignore key releases during selection detection to prevent synthetic Ctrl+C from stopping recording
+      if (state.isDetectingSelection) {
+          return
+      }
+
       //console.log("[KEYBOARD] KeyRelease:", e.data.key)
       keysPressed.delete(e.data.key)
 
@@ -393,7 +423,7 @@ export function listenToKeyboardEvents() {
       }
       
       // 2. Cleanup Shortcut
-      if (cleanupShortcut && cleanupShortcutMode === "hold" && state.isRecording && state.isCleanupMode) {
+      if (cleanupShortcut && cleanupShortcutMode === "hold") {
           const parts = cleanupShortcut.split("+")
           let releasedKeyMatches = false
            // Check modifiers
@@ -408,9 +438,18 @@ export function listenToKeyboardEvents() {
           if (parts.includes(normalizedReleasedKey)) releasedKeyMatches = true
           
           if (releasedKeyMatches) {
-              console.log("[CLEANUP] Stopping cleanup recording (Hold mode)")
-              state.isCleanupRecording = false
-              getWindowRendererHandlers("panel")?.finishRecording.send()
+              // Cancel timer if it's running (short press)
+              if (startCleanupRecordingTimer) {
+                  console.log("[CLEANUP] Short press detected, cancelling timer")
+                  clearTimeout(startCleanupRecordingTimer)
+                  startCleanupRecordingTimer = undefined
+              } else if (isHoldingCleanupShortcut) {
+                  // Stop recording if it was running and we were holding
+                  console.log("[CLEANUP] Key released, stopping recording")
+                  state.isCleanupRecording = false
+                  getWindowRendererHandlers("panel")?.finishRecording.send()
+                  isHoldingCleanupShortcut = false
+              }
           }
       }
 
