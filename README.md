@@ -61,9 +61,60 @@ When you trigger the cleanup shortcut **without selecting any text**, Whispo ent
     - **LLM Processing**: Supports OpenAI, Groq, and Gemini for text post-processing.
 - **Custom API**: Option to use your own custom API URL for transcription services.
 
-### Other Notes
-https://docs.wisprflow.ai/articles/5797030187-supported-unsupported-keyboard-hotkey-shortcuts could help to know about what shortcuts may be helpful
+## 📋 Keyboard Shortcut Compatibility
 
+### ⚠️ Important: Command Mode Shortcut Selection (Push-to-Talk Mode)
+
+> [!WARNING]
+> When using **Command Mode** with **Push-to-Talk (Hold) mode**, certain keyboard shortcuts may **fail to detect selected text** properly. This is due to a technical limitation with how the application detects selections.
+
+#### Why This Happens
+
+When you trigger Command Mode in push-to-talk mode:
+
+1. You **press and hold** your shortcut (e.g., `Ctrl+Alt+/`)
+2. After a 300ms delay, the app needs to check if you have text selected
+3. To do this, it simulates **`Ctrl+C`** to copy any selected text
+4. **Problem**: If your shortcut uses **multiple modifier keys** (Ctrl, Alt, Shift), they are **still being held down** when the app tries to simulate `Ctrl+C`
+5. This causes the copy operation to be interpreted as a different key combination (e.g., `Ctrl+Alt+C` instead of `Ctrl+C`), which **fails to copy** the selected text
+
+#### ✅ Recommended Shortcuts for Command Mode (Push-to-Talk)
+
+**Best Options:**
+- `Ctrl+F9` ✓ (Tested and working)
+- `Ctrl+F10`, `Ctrl+F11`, `Ctrl+F12` ✓
+- Any **`Ctrl+F[1-12]`** function key combination
+
+**Alternative Options:**
+- `Ctrl+[Uncommon Letter]` (e.g., `Ctrl+J`, `Ctrl+K`) - Only if not used by your applications
+- Single modifier combinations with rarely-used keys
+
+#### ❌ Shortcuts to Avoid for Command Mode (Push-to-Talk)
+
+**Do NOT use shortcuts with multiple modifiers:**
+- `Ctrl+Alt+[any key]` ✗ (e.g., `Ctrl+Alt+/`, `Ctrl+Alt+Space`)
+- `Ctrl+Shift+[any key]` ✗ (e.g., `Ctrl+Shift+C`)
+- `Alt+Shift+[any key]` ✗
+- Any combination with 2+ modifier keys ✗
+
+> [!NOTE]
+> This limitation **only affects Command Mode in Push-to-Talk mode**. If you're using:
+> - **Toggle mode** for Command Mode: All shortcuts work fine
+> - **Regular dictation**: All shortcuts work fine
+> - **Text Cleanup mode**: Most shortcuts work (e.g., `Ctrl+Alt` tested and working)
+
+#### Tested Configurations
+
+| Feature | Mode | Shortcut | Status |
+|---------|------|----------|--------|
+| Command Mode | Push-to-Talk | `Ctrl+F9` | ✅ Working |
+| Command Mode | Push-to-Talk | `Ctrl+Alt+/` | ❌ Fails to detect selection |
+| Regular Dictation | Push-to-Talk | `Ctrl+Alt` | ✅ Working |
+| Text Cleanup | Toggle | `Ctrl+Shift+C` | ✅ Working |
+
+#### Additional Resources
+
+For more information about supported keyboard shortcuts, see: https://docs.wisprflow.ai/articles/5797030187-supported-unsupported-keyboard-hotkey-shortcuts 
 ## License
 
 [AGPL-3.0](./LICENSE)

@@ -187,11 +187,19 @@ export function listenToKeyboardEvents() {
         isPressedShiftKey = true
       }
 
-      if (e.data.key === "Escape" && state.isRecording) {
+      if (e.data.key === "Escape" /* && state.isRecording */) {
         const win = WINDOWS.get("panel")
         if (win) {
           stopRecordingAndHidePanelWindow()
         }
+        state.isCleanupRecording = false
+        state.isCleanupMode = false
+        state.isCommandMode = false
+        isHoldingCleanupShortcut = false
+        state.selectedText = ""
+        startCleanupRecordingTimer = undefined
+        startRecordingTimer = undefined
+        state.isDetectingSelection = false
 
         return
       }
@@ -320,7 +328,7 @@ export function listenToKeyboardEvents() {
       const shortcutMode = configStore.get().shortcutMode || "hold"
       
       // Check for custom shortcut
-      if (shortcut && shortcut !== "hold-ctrl") {
+      if (shortcut /* && shortcut !== "hold-ctrl" */) {
         if (checkShortcut(shortcut, e.data.key)) {
           if (shortcutMode === "toggle") {
              getWindowRendererHandlers("panel")?.startOrFinishRecording.send()
@@ -344,7 +352,7 @@ export function listenToKeyboardEvents() {
           return
         }
       }
-      
+     /* 
       // Legacy hold-ctrl support
       if (shortcut === "hold-ctrl") {
         if (e.data.key === "ControlLeft") {
@@ -363,6 +371,7 @@ export function listenToKeyboardEvents() {
           }, 800)
         }
       }
+      */
       
     } else if (e.event_type === "KeyRelease") {
       // Ignore key releases during selection detection to prevent synthetic Ctrl+C from stopping recording
@@ -453,7 +462,7 @@ export function listenToKeyboardEvents() {
           }
       }
 
-      if (shortcut && shortcut !== "hold-ctrl") {
+      /*if (shortcut && shortcut !== "hold-ctrl") {
         return
       }
 
@@ -468,7 +477,7 @@ export function listenToKeyboardEvents() {
         }
 
         isHoldingCtrlKey = false
-      }
+      }*/
     }
   }
 
