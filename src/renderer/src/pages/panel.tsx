@@ -71,6 +71,11 @@ export function Component() {
 
       if (!isConfirmedRef.current) return
 
+      if (blob.size === 0 || duration < 1000) {
+        console.log("Recording too short or empty, ignoring")
+        return
+      }
+
       playSound("end_record")
       transcribeMutation.mutate({
         blob,
