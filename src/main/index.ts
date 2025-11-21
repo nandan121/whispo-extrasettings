@@ -1,10 +1,11 @@
-import { app, Menu } from "electron"
+import { app, Menu, globalShortcut } from "electron"
 import { electronApp, optimizer } from "@electron-toolkit/utils"
 import {
   createMainWindow,
   createPanelWindow,
   createSetupWindow,
   makePanelWindowClosable,
+  showMainWindow,
   WINDOWS,
 } from "./window"
 import { listenToKeyboardEvents } from "./keyboard"
@@ -44,6 +45,10 @@ app.whenReady().then(() => {
 
   initTray()
 
+  globalShortcut.register("CommandOrControl+,", () => {
+    showMainWindow("/settings")
+  })
+
   import("./updater").then((res) => res.init()).catch(console.error)
 
   // Default open or close DevTools by F12 in development
@@ -67,6 +72,7 @@ app.whenReady().then(() => {
 
   app.on("before-quit", () => {
     makePanelWindowClosable()
+    globalShortcut.unregisterAll()
   })
 })
 
