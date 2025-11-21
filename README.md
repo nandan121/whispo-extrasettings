@@ -86,8 +86,15 @@ When you trigger Command Mode in push-to-talk mode:
 - Any **`Ctrl+F[1-12]`** function key combination
 
 **Alternative Options:**
+- `Ctrl+[Number]` (e.g., `Ctrl+6`, `Ctrl+7`) ✓ - Both top-row and numpad numbers work
 - `Ctrl+[Uncommon Letter]` (e.g., `Ctrl+J`, `Ctrl+K`) - Only if not used by your applications
 - Single modifier combinations with rarely-used keys
+
+> [!TIP]
+> Number keys (0-9) work with **both** the top row number keys and the numpad keys. They are treated as equivalent, so `Ctrl+6` will trigger whether you press the top row 6 or numpad 6.
+
+> [!NOTE]
+> **NumLock must be enabled** for numpad keys to work as numbers. If NumLock is off, the numpad keys will register as navigation keys (e.g., `RightArrow`, `End`, `PageDown`) instead of numbers.
 
 #### ❌ Shortcuts to Avoid for Command Mode (Push-to-Talk)
 

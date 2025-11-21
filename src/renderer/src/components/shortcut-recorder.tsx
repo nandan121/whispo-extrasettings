@@ -39,6 +39,7 @@ export function ShortcutRecorder({
             // Handle regular keys
             if (key.startsWith("Key")) key = key.slice(3)
             if (key.startsWith("Digit")) key = key.slice(5)
+            if (key.startsWith("Numpad")) key = key.slice(6) // Numpad0-9 → 0-9, NumpadAdd → Add, etc.
 
             // Add to set
             keys.add(key)

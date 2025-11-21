@@ -229,6 +229,9 @@ export function listenToKeyboardEvents() {
         // Normalize rdev key to match our recorder format
         let normalizedCurrentKey = currentKey
         if (normalizedCurrentKey.startsWith("Key")) normalizedCurrentKey = normalizedCurrentKey.slice(3)
+        if (normalizedCurrentKey.startsWith("Digit")) normalizedCurrentKey = normalizedCurrentKey.slice(5) // Digit0-9 → 0-9 (browser format, may not be used by rdev)
+        if (normalizedCurrentKey.startsWith("Num") && !normalizedCurrentKey.startsWith("NumLock")) normalizedCurrentKey = normalizedCurrentKey.slice(3) // Num0-9 → 0-9 (rdev top-row numbers)
+        if (normalizedCurrentKey.startsWith("Kp")) normalizedCurrentKey = normalizedCurrentKey.slice(2) // Kp0-9 → 0-9 (rdev numpad), KpPlus → Plus, etc.
         
         // Handle specific mappings for modifiers
         if (currentKey === "ControlLeft" || currentKey === "ControlRight") normalizedCurrentKey = "Ctrl"
