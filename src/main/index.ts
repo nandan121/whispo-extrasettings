@@ -13,7 +13,7 @@ import { registerIpcMain } from "@egoist/tipc/main"
 import { router } from "./tipc"
 import { registerServeProtocol, registerServeSchema } from "./serve"
 import { createAppMenu } from "./menu"
-import { initTray } from "./tray"
+import { initTray, destroyTray } from "./tray"
 import { isAccessibilityGranted } from "./utils"
 
 registerServeSchema()
@@ -73,6 +73,7 @@ app.whenReady().then(() => {
   app.on("before-quit", () => {
     makePanelWindowClosable()
     globalShortcut.unregisterAll()
+    destroyTray()
   })
 })
 

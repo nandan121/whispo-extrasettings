@@ -62,6 +62,11 @@ export const updateTrayIcon = () => {
   _tray.setImage(state.isRecording ? stopIcon : defaultIcon)
 }
 
+export const destroyTray = () => {
+  _tray?.destroy()
+  _tray = undefined
+}
+
 export const initTray = () => {
   const tray = (_tray = new Tray(defaultIcon))
 
