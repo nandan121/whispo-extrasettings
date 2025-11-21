@@ -47,6 +47,10 @@ export const router = {
     app.quit()
   }),
 
+  quitApp: t.procedure.action(async () => {
+    app.quit()
+  }),
+
   getUpdateInfo: t.procedure.action(async () => {
     const { getUpdateInfo } = await import("./updater")
     return getUpdateInfo()
@@ -209,6 +213,84 @@ export const router = {
         state.isCleanupMode = false
         state.selectedText = ""
         state.isCleanupRecording = false
+      } else if (state.isCommandMode) {
+        console.log("[COMMAND] Command Mode - Transcript:", json.text)
+        const commandText = json.text.trim()
+        const mappings = config.commandMappings || []
+        
+        // Sort mappings by prefix length (descending) to match longest prefix first
+        mappings.sort((a, b) => b.prefix.length - a.prefix.length)
+        
+        let matchedMapping = mappings.find(m => commandText.toLowerCase().startsWith(m.prefix.toLowerCase()))
+        let actionToExecute = ""
+        
+        if (matchedMapping) {
+            console.log("[COMMAND] Matched prefix:", matchedMapping.prefix)
+            const commandArg = commandText.slice(matchedMapping.prefix.length).trim()
+            actionToExecute = matchedMapping.action.replace("{command}", encodeURIComponent(commandArg))
+        } else {
+            // No prefix match - Fallback logic
+            if (commandText.startsWith("http://") || commandText.startsWith("https://")) {
+                actionToExecute = commandText
+            } else {
+                const defaultMapping = mappings.find(m => m.isDefault)
+                if (defaultMapping) {
+                    console.log("[COMMAND] Using default mapping:", defaultMapping.name)
+                    actionToExecute = defaultMapping.action.replace("{command}", encodeURIComponent(commandText))
+                } else {
+                    // System command fallback
+                    actionToExecute = commandText
+                }
+            }
+        }
+        
+        console.log("[COMMAND] Executing:", actionToExecute)
+        
+        if (actionToExecute.startsWith("http://") || actionToExecute.startsWith("https://")) {
+            shell.openExternal(actionToExecute)
+        } else {
+            // Execute as shell command
+            const { exec } = await import("child_process")
+            exec(actionToExecute, (error) => {
+                if (error) {
+                    console.error(`[COMMAND] Execution error: ${error}`)
+                }
+            })
+        }
+        
+        state.isCommandMode = false
+        state.isCleanupRecording = false
+        
+        const panel = WINDOWS.get("panel")
+        if (panel) {
+            panel.hide()
+        }
+
+        // Save history for Command Mode
+        const history = getRecordingHistory()
+        const item: RecordingHistoryItem = {
+            id: Date.now().toString(),
+            createdAt: Date.now(),
+            duration: input.duration,
+            transcript: `STT: ${json.text}\nNO SELECTION DETECTED\nCOMMAND EXECUTED: ${actionToExecute}`,
+        }
+        history.push(item)
+        saveRecordingsHistory(history)
+
+        fs.writeFileSync(
+            path.join(recordingsFolder, `${item.id}.webm`),
+            Buffer.from(input.recording),
+        )
+
+        const main = WINDOWS.get("main")
+        if (main) {
+            getRendererHandlers<RendererHandlers>(
+                main.webContents,
+            ).refreshRecordingHistory.send()
+        }
+        
+        // Don't paste or write text in command mode
+        return
       } else {
         //console.log("[CLEANUP] Normal dictation mode")
         // Normal dictation: post-process transcript

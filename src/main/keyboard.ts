@@ -78,6 +78,44 @@ export const simulateCopy = () => {
   })
 }
 
+export const detectSelection = async (): Promise<string | null> => {
+  try {
+    // 1. Save current clipboard
+    const originalText = clipboard.readText()
+    const originalImage = clipboard.readImage()
+    
+    // 2. Set marker
+    const marker = `WHISPO_MARKER_${Date.now()}_${Math.random()}`
+    clipboard.writeText(marker)
+    
+    // 3. Simulate Copy
+    await simulateCopy()
+    
+    // 4. Wait a bit for clipboard to update
+    await new Promise(resolve => setTimeout(resolve, 200))
+    
+    // 5. Check clipboard
+    const currentText = clipboard.readText()
+    
+    if (currentText === marker) {
+      // No change -> No selection
+      // Restore original
+      if (!originalImage.isEmpty()) {
+        clipboard.writeImage(originalImage)
+      } else {
+        clipboard.writeText(originalText)
+      }
+      return null
+    } else {
+      // Changed -> Text was selected
+      return currentText
+    }
+  } catch (error) {
+    console.error("Error detecting selection:", error)
+    return null
+  }
+}
+
 const parseEvent = (event: any) => {
   try {
     const e = JSON.parse(String(event))
@@ -195,30 +233,28 @@ export function listenToKeyboardEvents() {
            //console.log("[CLEANUP] Cleanup triggered")
            if (cleanupMode === "toggle") {
              if (!state.isCleanupRecording) {
-                // Start recording logic (same as before)
+                // Start recording logic
                 state.isCleanupRecording = true 
                 const waitForKeyRelease = () => {
                   if (isPressedAltKey || isPressedShiftKey || isPressedCtrlKey || isPressedWindowsKey) {
                     setTimeout(waitForKeyRelease, 10)
                   } else {
-                    simulateCopy().then(() => {
-                      setTimeout(() => {
-                        const selectedText = clipboard.readText()
-                        console.log("[CLEANUP] Captured text:", selectedText.substring(0, 100) + (selectedText.length > 100 ? "..." : ""))
-                        if (selectedText.trim()) {
-                          state.isCleanupMode = true
-                          state.selectedText = selectedText
-                          console.log("[CLEANUP] Starting recording panel")
-                          showPanelWindowAndStartRecording()
-                        } else {
-                          console.log("[CLEANUP] No text captured from clipboard")
-                          state.isCleanupRecording = false
-                          state.isCleanupMode = false
-                          state.selectedText = ""
-                        }
-                      }, 200)
-                    }).catch((error) => {
-                      console.error("[CLEANUP] Failed to simulate copy:", error)
+                    detectSelection().then((selection) => {
+                      if (selection) {
+                        console.log("[CLEANUP] Text selected:", selection.substring(0, 50) + "...")
+                        state.isCleanupMode = true
+                        state.selectedText = selection
+                        state.isCommandMode = false
+                        showPanelWindowAndStartRecording()
+                      } else {
+                        console.log("[CLEANUP] No text selected -> Command Mode")
+                        state.isCleanupMode = false
+                        state.selectedText = ""
+                        state.isCommandMode = true
+                        showPanelWindowAndStartRecording()
+                      }
+                    }).catch((err) => {
+                      console.error("[CLEANUP] Selection detection failed:", err)
                       state.isCleanupRecording = false
                     })
                   }
@@ -234,18 +270,18 @@ export function listenToKeyboardEvents() {
              // HOLD MODE
              if (!state.isCleanupRecording) {
                 state.isCleanupRecording = true
-                simulateCopy().then(() => {
-                    setTimeout(() => {
-                        const selectedText = clipboard.readText()
-                        if (selectedText.trim()) {
-                            state.isCleanupMode = true
-                            state.selectedText = selectedText
-                            showPanelWindowAndStartRecording()
-                        } else {
-                            state.isCleanupRecording = false
-                            state.isCleanupMode = false
-                        }
-                    }, 200)
+                detectSelection().then((selection) => {
+                    if (selection) {
+                        state.isCleanupMode = true
+                        state.selectedText = selection
+                        state.isCommandMode = false
+                        showPanelWindowAndStartRecording()
+                    } else {
+                        state.isCleanupMode = false
+                        state.selectedText = ""
+                        state.isCommandMode = true
+                        showPanelWindowAndStartRecording()
+                    }
                 }).catch(() => {
                     state.isCleanupRecording = false
                 })

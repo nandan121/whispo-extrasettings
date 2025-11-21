@@ -25,7 +25,26 @@ class ConfigStore {
   }
 
   get() {
-    return this.config || {}
+    const defaults: Config = {
+      commandMappings: [
+        {
+          id: "perplexity-default",
+          name: "Perplexity",
+          prefix: "Perplexity",
+          action: "https://www.perplexity.ai/search/new?q={command}",
+          isDefault: true,
+        },
+        {
+          id: "chatgpt-default",
+          name: "ChatGPT",
+          prefix: "ChatGPT",
+          action: "https://chatgpt.com/?prompt={command}",
+          isDefault: false,
+        },
+      ],
+    }
+
+    return { ...defaults, ...this.config }
   }
 
   save(config: Config) {

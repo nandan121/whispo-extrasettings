@@ -34,6 +34,7 @@ import {
 } from "@renderer/lib/query-client"
 import { Config } from "@shared/types"
 import { ShortcutRecorder } from "@renderer/components/shortcut-recorder"
+import { tipcClient } from "@renderer/lib/tipc-client"
 
 export function Component() {
   const configQuery = useConfigQuery()
@@ -352,6 +353,17 @@ export function Component() {
           </>
         )}
       </ControlGroup>
+
+      <div className="flex justify-end px-3 pb-4">
+        <Button
+          variant="destructive"
+          onClick={() => {
+            tipcClient.quitApp()
+          }}
+        >
+          Exit Application
+        </Button>
+      </div>
     </div>
   )
 }

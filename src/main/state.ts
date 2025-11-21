@@ -2,5 +2,6 @@ export const state = {
   isRecording: false,
   isCleanupMode: false,
   selectedText: "",
-  isCleanupRecording: false
+  isCleanupRecording: false,
+  isCommandMode: false
 }

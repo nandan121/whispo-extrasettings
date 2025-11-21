@@ -37,4 +37,14 @@ export type Config = {
   textCleanupEnabled?: boolean
   textCleanupProviderId?: CHAT_PROVIDER_ID
   textCleanupPromptTemplate?: string
+
+  commandMappings?: CommandMapping[]
+}
+
+export type CommandMapping = {
+  id: string
+  name: string
+  prefix: string
+  action: string
+  isDefault?: boolean
 }

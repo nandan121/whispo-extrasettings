@@ -19,6 +19,10 @@ export function Component() {
       text: "About",
       href: "/settings/about",
     },
+    {
+      text: "Commands",
+      href: "/settings/commands",
+    },
   ]
 
   const location = useLocation()
