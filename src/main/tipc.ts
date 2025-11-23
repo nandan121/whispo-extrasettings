@@ -159,6 +159,7 @@ export const router = {
       fs.mkdirSync(recordingsFolder, { recursive: true })
 
       const config = configStore.get()
+      
       const form = new FormData()
       form.append(
         "file",
@@ -170,15 +171,27 @@ export const router = {
           ? config.groqSttModel || "whisper-large-v3"
           : config.openaiSttModel || "whisper-1",
       )
-      form.append("response_format", "json")
+      form.append("response_format", "verbose_json")
+
+      // Add language if specified and not "auto"
+      if (config.transcriptionLanguage && config.transcriptionLanguage !== "auto") {
+        form.append("language", config.transcriptionLanguage)
+      }
+
+      // Add prompt if specified AND enabled
+      if (config.transcriptionPrompt && config.transcriptionPromptEnabled !== false) {
+        form.append("prompt", config.transcriptionPrompt)
+      }
 
       const groqBaseUrl = config.groqBaseUrl || "https://api.groq.com/openai/v1"
       const openaiBaseUrl = config.openaiBaseUrl || "https://api.openai.com/v1"
 
+      const apiUrl = config.sttProviderId === "groq"
+        ? `${groqBaseUrl}/audio/transcriptions`
+        : `${openaiBaseUrl}/audio/transcriptions`
+
       const transcriptResponse = await fetch(
-        config.sttProviderId === "groq"
-          ? `${groqBaseUrl}/audio/transcriptions`
-          : `${openaiBaseUrl}/audio/transcriptions`,
+        apiUrl,
         {
           method: "POST",
           headers: {
@@ -195,7 +208,7 @@ export const router = {
       }
 
       const json: { text: string } = await transcriptResponse.json()
-      //console.log("[CLEANUP] Raw transcription:", json.text)
+      console.log("[CLEANUP] Raw transcription:", JSON.stringify(json))
       let finalText = json.text
       let finalTextForHistory = "STT:"+json.text
 

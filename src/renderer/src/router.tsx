@@ -23,6 +23,10 @@ export const router: ReturnType<typeof createBrowserRouter> =
               lazy: () => import("./pages/settings-providers"),
             },
             {
+              path: "transcription",
+              lazy: () => import("./pages/settings-transcription"),
+            },
+            {
               path: "data",
               lazy: () => import("./pages/settings-data"),
             },

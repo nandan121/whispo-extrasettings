@@ -12,6 +12,10 @@ export function Component() {
       href: "/settings/providers",
     },
     {
+      text: "Transcription",
+      href: "/settings/transcription",
+    },
+    {
       text: "Data",
       href: "/settings/data",
     },

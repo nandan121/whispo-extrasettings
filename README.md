@@ -60,6 +60,12 @@ When you trigger the cleanup shortcut **without selecting any text**, Whispo ent
     - **Transcription**: Uses OpenAI Whisper (via OpenAI or Groq API).
     - **LLM Processing**: Supports OpenAI, Groq, and Gemini for text post-processing.
 - **Custom API**: Option to use your own custom API URL for transcription services.
+- **Transcription Settings**:
+    - **Language Selection**: Choose from 58+ supported languages or use Auto-detect mode. Supports languages including English, Hindi, French, Spanish, German, Japanese, Chinese, Arabic, and many more.
+        - ⚠️ **Note for Non-Latin Scripts**: When a specific language is selected for languages with non-Latin scripts (Hindi, Arabic, Chinese, etc.), transcription may be romanized (e.g., "Aap kaise hain?" instead of "आप कैसे हैं?"). For native script output, use **"Auto" (recommended)** which correctly detects and uses the appropriate script.
+    - **Custom Words/Phrases**: Add domain-specific terms, technical vocabulary, or names to improve transcription accuracy. Examples: "ChatGPT, OpenAI, Groq, Whisper, Gemini, API".
+        - **Toggle On/Off**: Enable "Use Custom Words" when speaking in the same language as your phrases (typically English). Disable it when switching to other languages to avoid romanization and get native script output.
+
 
 ## 📋 Keyboard Shortcut Compatibility
 

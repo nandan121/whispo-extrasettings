@@ -26,6 +26,9 @@ class ConfigStore {
 
   get() {
     const defaults: Config = {
+      transcriptionLanguage: "auto",
+      transcriptionPrompt: "ChatGPT, OpenAI, Groq",
+      transcriptionPromptEnabled: true,
       commandMappings: [
         {
           id: "perplexity-default",

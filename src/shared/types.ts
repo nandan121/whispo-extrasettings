@@ -38,6 +38,10 @@ export type Config = {
   textCleanupProviderId?: CHAT_PROVIDER_ID
   textCleanupPromptTemplate?: string
 
+  transcriptionLanguage?: string
+  transcriptionPrompt?: string
+  transcriptionPromptEnabled?: boolean
+
   commandMappings?: CommandMapping[]
 }
 
