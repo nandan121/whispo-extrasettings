@@ -279,32 +279,10 @@ export const router = {
             panel.hide()
         }
 
-        // Save history for Command Mode
-        const history = getRecordingHistory()
-        const item: RecordingHistoryItem = {
-            id: Date.now().toString(),
-            createdAt: Date.now(),
-            duration: input.duration,
-            transcript: `STT: ${json.text}\nNO SELECTION DETECTED\nCOMMAND EXECUTED: ${actionToExecute}`,
-        }
-        history.push(item)
-        saveRecordingsHistory(history)
 
-        fs.writeFileSync(
-            path.join(recordingsFolder, `${item.id}.webm`),
-            Buffer.from(input.recording),
-        )
+        finalTextForHistory+=`\nNO SELECTION DETECTED\nCOMMAND EXECUTED: ${actionToExecute}`
 
-        const main = WINDOWS.get("main")
-        if (main) {
-            getRendererHandlers<RendererHandlers>(
-                main.webContents,
-            ).refreshRecordingHistory.send()
-        }
-        
-        // Don't paste or write text in command mode
-        return
-      } else {
+      } else if(config.transcriptPostProcessingEnabled) {
         //console.log("[CLEANUP] Normal dictation mode")
         // Normal dictation: post-process transcript
         finalText = await postProcessTranscript(json.text)
@@ -338,10 +316,13 @@ export const router = {
         panel.hide()
       }
 
-      // paste
-      clipboard.writeText(finalText)
-      if (isAccessibilityGranted()) {
-        await writeText(finalText)
+      // Don't paste or write text in command mode
+      if (!state.isCommandMode) {
+        //  paste
+        clipboard.writeText(finalText)
+        if (isAccessibilityGranted()) {
+          await writeText(finalText)
+        }
       }
     }),
 
