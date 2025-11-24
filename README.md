@@ -25,6 +25,7 @@ https://github.com/user-attachments/assets/2344a817-f36c-42b0-9ebc-cdd6e926b7a0
         - **Push to Talk (Hold)**: Hold the key to record, release to transcribe. Includes a smart delay to prevent accidental triggers.
         - **Toggle**: Press once to start recording, press again to stop.
 - **Cancel Anytime**: Press `Esc` to instantly cancel the current recording.
+- **Translation**: Translate foreign languages to English by setting the **Transcription Language** to "English" and speaking in any supported foreign language.
 
 ### ✨ AI Text Cleanup
 - **Contextual Editing**: Highlight text in any app and use the cleanup shortcut (default: `Ctrl+Shift+C`) to modify it.
@@ -65,6 +66,13 @@ When you trigger the cleanup shortcut **without selecting any text**, Whispo ent
         - ⚠️ **Note for Non-Latin Scripts**: When a specific language is selected for languages with non-Latin scripts (Hindi, Arabic, Chinese, etc.), transcription may be romanized (e.g., "Aap kaise hain?" instead of "आप कैसे हैं?"). For native script output, use **"Auto" (recommended)** which correctly detects and uses the appropriate script.
     - **Custom Words/Phrases**: Add domain-specific terms, technical vocabulary, or names to improve transcription accuracy. Examples: "ChatGPT, OpenAI, Groq, Whisper, Gemini, API".
         - **Toggle On/Off**: Enable "Use Custom Words" when speaking in the same language as your phrases (typically English). Disable it when switching to other languages to avoid romanization and get native script output.
+        - ⚠️ **Best Practice for Silence/Hallucinations**: Using the "Custom Words" feature (Whisper prompt) can sometimes cause silence to be transcribed as gibberish or repetitive text. If you encounter this, we recommend **disabling "Use Custom Words"** and instead using the **Post-Processing Prompt** feature with a prompt like:
+            > "Also, correct any misspelled names to these exact spellings: ChatGPT, OpenAI, Groq. Preserve all other text exactly as is."
+            
+            This approach fixes spellings without introducing hallucinations during silence.
+
+### 👨‍💻 Developer Notes
+- **Hallucination Patterns**: There is a list of known hallucination strings (e.g., "Thank you") defined in `src/main/tipc.ts`. These are used to filter out common Whisper hallucinations when using custom prompts. You can update this list in the code if you encounter other persistent hallucinations.
 
 
 ## 📋 Keyboard Shortcut Compatibility

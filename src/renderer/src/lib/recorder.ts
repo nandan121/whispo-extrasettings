@@ -95,9 +95,13 @@ export class Recorder extends EventEmitter<{
 
     const log = logTime("startRecording")
 
+    // Enable native noise suppression to reduce initialization artifacts
     const stream = (this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         deviceId: "default",
+        noiseSuppression: true,
+        echoCancellation: true,
+        autoGainControl: true,
       },
       video: false,
     }))
@@ -112,19 +116,10 @@ export class Recorder extends EventEmitter<{
     let audioChunks: Blob[] = []
     let startTime = Date.now()
 
-    // Start timing for mediaRecorder.onstart
-    mediaRecorder.onstart = () => {
-      log("onstart")
-      startTime = Date.now()
-      this.emit("record-start")
-      const stopAnalysing = this.analyseAudio(stream)
-      this.once("destroy", stopAnalysing)
-      playSound("begin_record")
-    }
-
     mediaRecorder.ondataavailable = (event) => {
       audioChunks.push(event.data)
     }
+    
     mediaRecorder.onstop = async () => {
       const duration = Date.now() - startTime
       const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType })
@@ -134,7 +129,29 @@ export class Recorder extends EventEmitter<{
       audioChunks = []
     }
 
+    // This callback fires when recording ACTUALLY starts
+    mediaRecorder.onstart = () => {
+      log("mediaRecorder.onstart - recording actually started")
+      
+      // Now set the actual start time
+      startTime = Date.now()
+      
+      // Emit record-start event to update UI (shows red/white dots)
+      this.emit("record-start")
+      
+      // Start audio analysis for visualizer
+      const stopAnalysing = this.analyseAudio(stream)
+      this.once("destroy", stopAnalysing)
+    }
+
+    // Play the start sound BEFORE starting the recorder
+    await playSound("begin_record")
+    log("played begin_record sound")
+    
+    // Start recording (without timeslice to keep WebM container intact)
+    // The onstart callback above will fire when recording actually begins
     mediaRecorder.start()
+    log("mediaRecorder.start() called - waiting for onstart")
   }
 
   stopRecording() {

@@ -178,9 +178,12 @@ export const router = {
         form.append("language", config.transcriptionLanguage)
       }
 
+      // Track if we're sending a prompt (affects no_speech_prob reliability)
+      const isPromptSent = !!(config.transcriptionPrompt && config.transcriptionPromptEnabled !== false)
+
       // Add prompt if specified AND enabled
-      if (config.transcriptionPrompt && config.transcriptionPromptEnabled !== false) {
-        form.append("prompt", config.transcriptionPrompt)
+      if (isPromptSent) {
+        form.append("prompt", config.transcriptionPrompt!)
       }
 
       const groqBaseUrl = config.groqBaseUrl || "https://api.groq.com/openai/v1"
@@ -207,8 +210,55 @@ export const router = {
         throw new Error(message)
       }
 
-      const json: { text: string } = await transcriptResponse.json()
+      const json: { 
+        text: string
+        duration?: number
+        segments?: Array<{
+          no_speech_prob?: number
+          compression_ratio?: number
+          avg_logprob?: number
+        }>
+      } = await transcriptResponse.json()
       console.log("[CLEANUP] Raw transcription:", JSON.stringify(json))
+      
+      // Dual hallucination detection strategy based on prompt usage
+      if (json.segments && json.segments.length > 0) {
+        const avgNoSpeechProb = json.segments.reduce((sum, seg) => 
+          sum + (seg.no_speech_prob || 0), 0
+        ) / json.segments.length
+        
+        const avgCompressionRatio = json.segments.reduce((sum, seg) => 
+          sum + (seg.compression_ratio || 0), 0
+        ) / json.segments.length
+        
+        console.log(`[CLEANUP] Metrics - no_speech_prob: ${avgNoSpeechProb}, compression_ratio: ${avgCompressionRatio}, duration: ${json.duration}s, prompt_sent: ${isPromptSent}`)
+        
+        if (!isPromptSent) {
+          // NO PROMPT: no_speech_prob is reliable, use threshold
+          // Anything > 0.4 is likely silence/hallucination
+          if (avgNoSpeechProb > 0.4) {
+            console.log("[CLEANUP] Rejected: high no_speech_prob without prompt (likely silence)")
+            const panel = WINDOWS.get("panel")
+            panel?.hide()
+            return
+          }
+        } else {
+          // WITH PROMPT: no_speech_prob is unreliable, use pattern matching
+          const text = json.text.toLowerCase()
+          const hallucinationPatterns = [
+            ' Thank you',
+          ]
+          
+          // Only reject if it matches hallucination pattern AND audio is short
+          if ((json.duration || 0) < 3 && hallucinationPatterns.some(pattern => text.startsWith(pattern.toLowerCase()))) {
+            console.log("[CLEANUP] Rejected: known hallucination pattern with prompt:", text.substring(0, 50))
+            const panel = WINDOWS.get("panel")
+            panel?.hide()
+            return
+          }
+        }
+      }
+      
       let finalText = json.text
       let finalTextForHistory = "STT:"+json.text
 
