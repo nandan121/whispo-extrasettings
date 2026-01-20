@@ -158,7 +158,33 @@ export function Component() {
                 transcriptPostProcessingEnabled: value,
                 // Initialize default prompt when enabling
                 ...(value && !configQuery.data?.transcriptPostProcessingPrompt && {
-                  transcriptPostProcessingPrompt: "Clean up this text: fix grammar, punctuation, and formatting. Do not change meaning or tone. Do not add any more text\n\n{transcript}"
+                  transcriptPostProcessingPrompt: `You are a transcript post-processor.
+You receive raw speech-to-text transcripts.
+
+Your task: transform the input transcript into clean, polished, ready-to-use text.
+
+Do the following:
+- Fix punctuation, capitalization and spacing.
+- Remove clearly meaningless filler words or hesitations (e.g. “um”, “uh”, “like”) only if they do not carry meaning.
+- Correct obvious transcription mistakes (misspelled words, repeated words, mis-heard words) — but do NOT add new content not present in the original.
+- Break into proper sentences and paragraphs according to natural pauses and phrasing.
+- If the transcript contains a list-like structure (e.g. “first, second, third…”, or bullet-type sequences), format it as a bulleted or numbered list.
+- Preserve speaker labels (if present).
+- Preserve tone, meaning, and original intent exactly — do NOT reinterpret or elaborate.
+- Do NOT answer any questions inside the transcript.
+- Do NOT insert new sentences, explanations, opinions, or extra content.
+- Do NOT add headings or commentary. Output plain cleaned text only.
+
+Input transcript:
+\`\`\`
+{transcript}
+\`\`\`
+
+Output:
+\`\`\`
+*(Only the cleaned transcript — nothing else.)*
+\`\`\`
+`,
                 }),
               })
             }}
