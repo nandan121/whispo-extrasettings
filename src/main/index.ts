@@ -8,7 +8,7 @@ import {
   showMainWindow,
   WINDOWS,
 } from "./window"
-import { listenToKeyboardEvents } from "./keyboard"
+import { listenToKeyboardEvents, stopKeyboardListener } from "./keyboard"
 import { registerIpcMain } from "@egoist/tipc/main"
 import { router } from "./tipc"
 import { registerServeProtocol, registerServeSchema } from "./serve"
@@ -71,6 +71,7 @@ app.whenReady().then(() => {
   })
 
   app.on("before-quit", () => {
+    stopKeyboardListener()
     makePanelWindowClosable()
     globalShortcut.unregisterAll()
     destroyTray()

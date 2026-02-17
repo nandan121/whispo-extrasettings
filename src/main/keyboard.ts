@@ -7,7 +7,7 @@ import {
 import { systemPreferences } from "electron"
 import { configStore } from "./config"
 import { state } from "./state"
-import { spawn } from "child_process"
+import { spawn, ChildProcess } from "child_process"
 import path from "path"
 import { clipboard } from "electron"
 
@@ -81,26 +81,19 @@ export const simulateCopy = () => {
 export const detectSelection = async (): Promise<string | null> => {
   state.isDetectingSelection = true
   try {
-    // 1. Save current clipboard
     const originalText = clipboard.readText()
     const originalImage = clipboard.readImage()
-    
-    // 2. Set marker
+
     const marker = `WHISPO_MARKER_${Date.now()}_${Math.random()}`
     clipboard.writeText(marker)
-    
-    // 3. Simulate Copy
+
     await simulateCopy()
-    
-    // 4. Wait a bit for clipboard to update
+
     await new Promise(resolve => setTimeout(resolve, 200))
-    
-    // 5. Check clipboard
+
     const currentText = clipboard.readText()
-    
+
     if (currentText === marker) {
-      // No change -> No selection
-      // Restore original
       if (!originalImage.isEmpty()) {
         clipboard.writeImage(originalImage)
       } else {
@@ -108,14 +101,12 @@ export const detectSelection = async (): Promise<string | null> => {
       }
       return null
     } else {
-      // Changed -> Text was selected
       return currentText
     }
   } catch (error) {
     console.error("Error detecting selection:", error)
     return null
   } finally {
-    // Add a small buffer to ensure we don't catch the tail end of synthetic events
     setTimeout(() => {
         state.isDetectingSelection = false
     }, 100)
@@ -132,9 +123,6 @@ const parseEvent = (event: any) => {
   }
 }
 
-// keys that are currently pressed down without releasing
-// excluding ctrl
-// when other keys are pressed, pressing ctrl will not start recording
 const keysPressed = new Map<string, number>()
 
 const hasRecentKeyPress = () => {
@@ -142,12 +130,24 @@ const hasRecentKeyPress = () => {
 
   const now = Date.now() / 1000
   return [...keysPressed.values()].some((time) => {
-    // 10 seconds
-    // for some weird reasons sometime KeyRelease event is missing for some keys
-    // so they stay in the map
-    // therefore we have to check if the key was pressed in the last 10 seconds
     return now - time < 10
   })
+}
+
+let listenerChild: ChildProcess | null = null
+let listenerRestartTimer: NodeJS.Timeout | undefined
+let isShuttingDown = false
+
+export function stopKeyboardListener() {
+  isShuttingDown = true
+  if (listenerRestartTimer) {
+    clearTimeout(listenerRestartTimer)
+    listenerRestartTimer = undefined
+  }
+  if (listenerChild) {
+    listenerChild.kill()
+    listenerChild = null
+  }
 }
 
 export function listenToKeyboardEvents() {
@@ -167,19 +167,35 @@ export function listenToKeyboardEvents() {
     }
   }
 
-  const cancelRecordingTimer = () => {
-    if (startRecordingTimer) {
-      clearTimeout(startRecordingTimer)
-      startRecordingTimer = undefined
+  // Periodically reset modifier key states to prevent them getting stuck.
+  // If no key event has been received for 5 seconds, assume all modifiers are released.
+  let lastEventTime = Date.now()
+  const stuckKeyResetInterval = setInterval(() => {
+    const timeSinceLastEvent = Date.now() - lastEventTime
+    if (timeSinceLastEvent > 5000) {
+      if (isPressedCtrlKey || isPressedWindowsKey || isPressedAltKey || isPressedShiftKey) {
+        console.log("[KEYBOARD] Resetting stuck modifier keys (no events for 5s)")
+        isPressedCtrlKey = false
+        isPressedWindowsKey = false
+        isPressedAltKey = false
+        isPressedShiftKey = false
+      }
     }
-  }
+  }, 2000)
 
   const handleEvent = (e: RdevEvent) => {
+    lastEventTime = Date.now()
+
     if (e.event_type === "KeyPress") {
-      //console.log("[KEYBOARD] KeyPress:", e.data.key, "Modifiers - Ctrl:", isPressedCtrlKey, "Alt:", isPressedAltKey, "Shift:", isPressedShiftKey)
-      if (e.data.key === "ControlLeft") {
+      if (
+        e.data.key === "ControlLeft" ||
+        e.data.key === "ControlRight"
+      ) {
         isPressedCtrlKey = true
-      } else if (e.data.key === "MetaLeft") {
+      } else if (
+        e.data.key === "MetaLeft" ||
+        e.data.key === "MetaRight"
+      ) {
         isPressedWindowsKey = true
       } else if (e.data.key === "Alt" || e.data.key === "AltGr") {
         isPressedAltKey = true
@@ -187,7 +203,7 @@ export function listenToKeyboardEvents() {
         isPressedShiftKey = true
       }
 
-      if (e.data.key === "Escape" /* && state.isRecording */) {
+      if (e.data.key === "Escape") {
         const win = WINDOWS.get("panel")
         if (win) {
           stopRecordingAndHidePanelWindow()
@@ -204,7 +220,6 @@ export function listenToKeyboardEvents() {
         return
       }
 
-      // Helper to check if a shortcut matches the current state
       const checkShortcut = (shortcutConfig: string | undefined, currentKey: string) => {
         if (!shortcutConfig) return false
 
@@ -216,24 +231,19 @@ export function listenToKeyboardEvents() {
           win: parts.includes("Win"),
         }
 
-        // Check modifiers
         if (requiredModifiers.ctrl !== isPressedCtrlKey) return false
         if (requiredModifiers.alt !== isPressedAltKey) return false
         if (requiredModifiers.shift !== isPressedShiftKey) return false
         if (requiredModifiers.win !== isPressedWindowsKey) return false
 
-        // Check key
-        // The last part is usually the key, unless it's a modifier-only shortcut (which we shouldn't have ideally)
         const targetKey = parts[parts.length - 1]
-        
-        // Normalize rdev key to match our recorder format
+
         let normalizedCurrentKey = currentKey
         if (normalizedCurrentKey.startsWith("Key")) normalizedCurrentKey = normalizedCurrentKey.slice(3)
-        if (normalizedCurrentKey.startsWith("Digit")) normalizedCurrentKey = normalizedCurrentKey.slice(5) // Digit0-9 → 0-9 (browser format, may not be used by rdev)
-        if (normalizedCurrentKey.startsWith("Num") && !normalizedCurrentKey.startsWith("NumLock")) normalizedCurrentKey = normalizedCurrentKey.slice(3) // Num0-9 → 0-9 (rdev top-row numbers)
-        if (normalizedCurrentKey.startsWith("Kp")) normalizedCurrentKey = normalizedCurrentKey.slice(2) // Kp0-9 → 0-9 (rdev numpad), KpPlus → Plus, etc.
-        
-        // Handle specific mappings for modifiers
+        if (normalizedCurrentKey.startsWith("Digit")) normalizedCurrentKey = normalizedCurrentKey.slice(5)
+        if (normalizedCurrentKey.startsWith("Num") && !normalizedCurrentKey.startsWith("NumLock")) normalizedCurrentKey = normalizedCurrentKey.slice(3)
+        if (normalizedCurrentKey.startsWith("Kp")) normalizedCurrentKey = normalizedCurrentKey.slice(2)
+
         if (currentKey === "ControlLeft" || currentKey === "ControlRight") normalizedCurrentKey = "Ctrl"
         if (currentKey === "ShiftLeft" || currentKey === "ShiftRight") normalizedCurrentKey = "Shift"
         if (currentKey === "Alt" || currentKey === "AltGr") normalizedCurrentKey = "Alt"
@@ -242,18 +252,15 @@ export function listenToKeyboardEvents() {
         return normalizedCurrentKey === targetKey
       }
 
-      // Handle cleanup shortcut
       const cleanupShortcut = configStore.get().cleanupShortcut
       const textCleanupEnabled = configStore.get().textCleanupEnabled
       const cleanupMode = configStore.get().cleanupShortcutMode || "toggle"
-      
+
       if (cleanupShortcut && textCleanupEnabled) {
         if (checkShortcut(cleanupShortcut, e.data.key)) {
-           //console.log("[CLEANUP] Cleanup triggered")
            if (cleanupMode === "toggle") {
              if (!state.isCleanupRecording) {
-                // Start recording logic
-                state.isCleanupRecording = true 
+                state.isCleanupRecording = true
                 const waitForKeyRelease = () => {
                   if (isPressedAltKey || isPressedShiftKey || isPressedCtrlKey || isPressedWindowsKey) {
                     setTimeout(waitForKeyRelease, 10)
@@ -280,25 +287,22 @@ export function listenToKeyboardEvents() {
                 }
                 setTimeout(waitForKeyRelease, 10)
              } else {
-                // Stop recording
                 console.log("[CLEANUP] Stopping cleanup recording")
                 state.isCleanupRecording = false
                 getWindowRendererHandlers("panel")?.finishRecording.send()
              }
            } else {
-             // HOLD MODE: Start recording with delay
-             // Prevent repeated triggers if already holding or timer running
              if (isHoldingCleanupShortcut || startCleanupRecordingTimer) {
                 return
              }
-             
+
              if (!state.isRecording) {
                 console.log("[CLEANUP] Starting hold timer...")
                 startCleanupRecordingTimer = setTimeout(() => {
                   console.log("[CLEANUP] Hold timer fired, detecting selection and starting recording")
                   isHoldingCleanupShortcut = true
                   state.isCleanupRecording = true
-                  
+
                   detectSelection().then((selection) => {
                     if (selection) {
                       console.log("[CLEANUP] Text selected:", selection.substring(0, 50) + "...")
@@ -318,7 +322,7 @@ export function listenToKeyboardEvents() {
                     state.isCleanupRecording = false
                     isHoldingCleanupShortcut = false
                   })
-                  
+
                   startCleanupRecordingTimer = undefined
                 }, 300)
              }
@@ -329,21 +333,17 @@ export function listenToKeyboardEvents() {
 
       const shortcut = configStore.get().shortcut
       const shortcutMode = configStore.get().shortcutMode || "hold"
-      
-      // Check for custom shortcut
-      if (shortcut /* && shortcut !== "hold-ctrl" */) {
+
+      if (shortcut) {
         if (checkShortcut(shortcut, e.data.key)) {
           if (shortcutMode === "toggle") {
              getWindowRendererHandlers("panel")?.startOrFinishRecording.send()
           } else {
-             // Hold mode: Start recording with delay
-             // Prevent repeated triggers if already holding or timer running
              if (isHoldingShortcut || startRecordingTimer) {
                  return
              }
-             
+
              if (!state.isRecording) {
-                 // console.log("Starting hold timer...")
                  startRecordingTimer = setTimeout(() => {
                      console.log("Hold timer fired, starting recording")
                      isHoldingShortcut = true
@@ -355,39 +355,23 @@ export function listenToKeyboardEvents() {
           return
         }
       }
-     /* 
-      // Legacy hold-ctrl support
-      if (shortcut === "hold-ctrl") {
-        if (e.data.key === "ControlLeft") {
-          if (hasRecentKeyPress()) {
-            return
-          }
 
-          if (startRecordingTimer) {
-            return
-          }
-
-          startRecordingTimer = setTimeout(() => {
-            isHoldingCtrlKey = true
-            console.log("start recording")
-            showPanelWindowAndStartRecording()
-          }, 800)
-        }
-      }
-      */
-      
     } else if (e.event_type === "KeyRelease") {
-      // Ignore key releases during selection detection to prevent synthetic Ctrl+C from stopping recording
       if (state.isDetectingSelection) {
           return
       }
 
-      //console.log("[KEYBOARD] KeyRelease:", e.data.key)
       keysPressed.delete(e.data.key)
 
-      if (e.data.key === "ControlLeft") {
+      if (
+        e.data.key === "ControlLeft" ||
+        e.data.key === "ControlRight"
+      ) {
         isPressedCtrlKey = false
-      } else if (e.data.key === "MetaLeft") {
+      } else if (
+        e.data.key === "MetaLeft" ||
+        e.data.key === "MetaRight"
+      ) {
         isPressedWindowsKey = false
       } else if (e.data.key === "Alt" || e.data.key === "AltGr") {
         isPressedAltKey = false
@@ -400,63 +384,50 @@ export function listenToKeyboardEvents() {
       const cleanupShortcut = configStore.get().cleanupShortcut
       const cleanupShortcutMode = configStore.get().cleanupShortcutMode || "toggle"
 
-      // Check if we need to stop recording in Hold mode
-      
-      // 1. Recording Shortcut
       if (shortcut && shortcutMode === "hold") {
-          // Check if the released key was part of the shortcut
           const parts = shortcut.split("+")
           let releasedKeyMatches = false
-          
-          // Check modifiers
-          if (e.data.key === "ControlLeft" && parts.includes("Ctrl")) releasedKeyMatches = true
-          if (e.data.key === "MetaLeft" && parts.includes("Win")) releasedKeyMatches = true
+
+          if ((e.data.key === "ControlLeft" || e.data.key === "ControlRight") && parts.includes("Ctrl")) releasedKeyMatches = true
+          if ((e.data.key === "MetaLeft" || e.data.key === "MetaRight") && parts.includes("Win")) releasedKeyMatches = true
           if ((e.data.key === "Alt" || e.data.key === "AltGr") && parts.includes("Alt")) releasedKeyMatches = true
           if ((e.data.key === "ShiftLeft" || e.data.key === "ShiftRight") && parts.includes("Shift")) releasedKeyMatches = true
-          
-          // Check main key
+
           let normalizedReleasedKey = e.data.key
           if (normalizedReleasedKey.startsWith("Key")) normalizedReleasedKey = normalizedReleasedKey.slice(3)
           if (parts.includes(normalizedReleasedKey)) releasedKeyMatches = true
-          
+
           if (releasedKeyMatches) {
-              // Cancel timer if it's running (short press)
               if (startRecordingTimer) {
                   console.log("Short press detected, cancelling timer")
                   clearTimeout(startRecordingTimer)
                   startRecordingTimer = undefined
               } else if (isHoldingShortcut) {
-                  // Stop recording if it was running and we were holding
                   console.log("Key released, stopping recording")
                   getWindowRendererHandlers("panel")?.finishRecording.send()
                   isHoldingShortcut = false
               }
           }
       }
-      
-      // 2. Cleanup Shortcut
+
       if (cleanupShortcut && cleanupShortcutMode === "hold") {
           const parts = cleanupShortcut.split("+")
           let releasedKeyMatches = false
-           // Check modifiers
-          if (e.data.key === "ControlLeft" && parts.includes("Ctrl")) releasedKeyMatches = true
-          if (e.data.key === "MetaLeft" && parts.includes("Win")) releasedKeyMatches = true
+          if ((e.data.key === "ControlLeft" || e.data.key === "ControlRight") && parts.includes("Ctrl")) releasedKeyMatches = true
+          if ((e.data.key === "MetaLeft" || e.data.key === "MetaRight") && parts.includes("Win")) releasedKeyMatches = true
           if ((e.data.key === "Alt" || e.data.key === "AltGr") && parts.includes("Alt")) releasedKeyMatches = true
           if ((e.data.key === "ShiftLeft" || e.data.key === "ShiftRight") && parts.includes("Shift")) releasedKeyMatches = true
-          
-          // Check main key
+
           let normalizedReleasedKey = e.data.key
           if (normalizedReleasedKey.startsWith("Key")) normalizedReleasedKey = normalizedReleasedKey.slice(3)
           if (parts.includes(normalizedReleasedKey)) releasedKeyMatches = true
-          
+
           if (releasedKeyMatches) {
-              // Cancel timer if it's running (short press)
               if (startCleanupRecordingTimer) {
                   console.log("[CLEANUP] Short press detected, cancelling timer")
                   clearTimeout(startCleanupRecordingTimer)
                   startCleanupRecordingTimer = undefined
               } else if (isHoldingCleanupShortcut) {
-                  // Stop recording if it was running and we were holding
                   console.log("[CLEANUP] Key released, stopping recording")
                   state.isCleanupRecording = false
                   getWindowRendererHandlers("panel")?.finishRecording.send()
@@ -464,37 +435,85 @@ export function listenToKeyboardEvents() {
               }
           }
       }
-
-      /*if (shortcut && shortcut !== "hold-ctrl") {
-        return
-      }
-
-      cancelRecordingTimer()
-
-      if (e.data.key === "ControlLeft") {
-        console.log("release ctrl")
-        if (isHoldingCtrlKey) {
-          getWindowRendererHandlers("panel")?.finishRecording.send()
-        } else {
-          stopRecordingAndHidePanelWindow()
-        }
-
-        isHoldingCtrlKey = false
-      }*/
     }
   }
 
-  const child = spawn(rdevPath, ["listen"], {})
+  const startListener = () => {
+    if (isShuttingDown) return
 
-  child.stdout.on("data", (data) => {
-    // Comment out noisy key event logging during development
-    // if (import.meta.env.DEV) {
-    //   console.log(String(data))
-    // }
+    console.log("[KEYBOARD] Starting Rust listener process")
+    const child = spawn(rdevPath, ["listen"], {})
+    listenerChild = child
 
-    const event = parseEvent(data)
-    if (!event) return
+    let lastDataTime = Date.now()
 
-    handleEvent(event)
-  })
+    child.stdout.on("data", (data) => {
+      lastDataTime = Date.now()
+      const event = parseEvent(data)
+      if (!event) return
+      handleEvent(event)
+    })
+
+    child.stderr.on("data", (data) => {
+      console.error(`[KEYBOARD] Rust stderr: ${data}`)
+    })
+
+    child.on("close", (code, signal) => {
+      listenerChild = null
+      clearInterval(stuckKeyResetInterval)
+
+      if (isShuttingDown) {
+        console.log("[KEYBOARD] Listener stopped (app shutdown)")
+        return
+      }
+
+      console.log(`[KEYBOARD] Listener process exited (code=${code}, signal=${signal}), restarting in 1s...`)
+
+      // Reset modifier states on crash to prevent stuck keys
+      isPressedCtrlKey = false
+      isPressedWindowsKey = false
+      isPressedAltKey = false
+      isPressedShiftKey = false
+      isHoldingShortcut = false
+      isHoldingCleanupShortcut = false
+
+      listenerRestartTimer = setTimeout(() => {
+        listenerRestartTimer = undefined
+        startListener()
+      }, 1000)
+    })
+
+    child.on("error", (err) => {
+      console.error("[KEYBOARD] Failed to start listener:", err)
+      listenerChild = null
+
+      if (!isShuttingDown) {
+        listenerRestartTimer = setTimeout(() => {
+          listenerRestartTimer = undefined
+          startListener()
+        }, 3000)
+      }
+    })
+
+    // Health check: if no events received for 30 seconds while not recording, restart
+    const healthCheckInterval = setInterval(() => {
+      if (isShuttingDown) {
+        clearInterval(healthCheckInterval)
+        return
+      }
+      if (!listenerChild) {
+        clearInterval(healthCheckInterval)
+        return
+      }
+      const timeSinceLastData = Date.now() - lastDataTime
+      if (timeSinceLastData > 30000 && !state.isRecording) {
+        console.log("[KEYBOARD] Health check: no events for 30s, restarting listener")
+        child.kill()
+        clearInterval(healthCheckInterval)
+      }
+    }, 10000)
+  }
+
+  isShuttingDown = false
+  startListener()
 }
