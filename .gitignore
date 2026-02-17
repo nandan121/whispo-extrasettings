@@ -5,3 +5,4 @@ out
 *.log*
 target/
 bin/
+.env
