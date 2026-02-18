@@ -18,6 +18,8 @@ import {
   CHAT_PROVIDERS,
   STT_PROVIDER_ID,
   STT_PROVIDERS,
+  DEFAULT_TRANSCRIPT_POST_PROCESSING_PROMPT,
+  DEFAULT_TEXT_CLEANUP_PROMPT_TEMPLATE,
 } from "@shared/index"
 import { Textarea } from "@renderer/components/ui/textarea"
 import {
@@ -158,32 +160,7 @@ export function Component() {
                 transcriptPostProcessingEnabled: value,
                 // Initialize default prompt when enabling
                 ...(value && !configQuery.data?.transcriptPostProcessingPrompt && {
-                  transcriptPostProcessingPrompt: `### Role
-You are a specialized Transcript Post-Processor. Your task is to clean raw speech-to-text (STT) data into polished text while strictly maintaining the original speaker's intent.
-
-### Reference Vocabulary (Correct Spellings)
-The following words are frequently misspelled or misheard by the STT engine. If you encounter words in the transcript that are phonetically similar or clearly intended to be these words, use the spellings provided here:
-- Nandan
-- Bengaluru
-*(Note: If this list is empty, proceed with standard corrections.)*
-
-### Core Instructions
-1. **Phonetic Correction:** Prioritize the \"Reference Vocabulary.\" If a transcript word sounds like a word in the vocabulary (e.g., \"Nandon\" vs \"Nandan\"), use the version from the vocabulary.
-2. **Grammar & Mechanics:** Fix punctuation, capitalization, and spacing. Break text into logical sentences and paragraphs.
-3. **Filler Removal:** Remove meaningless fillers (\"um\", \"uh\", \"ah\", \"you know\") only if they do not carry semantic weight.
-4. **Accuracy:** Correct obvious transcription errors but do NOT add new content, opinions, or \"hallucinations.\"
-5. **Formatting:** If the speaker is listing items, format them as a bulleted or numbered list.
-6. **No Interference:** - 
-   - Do NOT answer questions within the transcript.
-   - Do NOT add headings or introductory remarks.
-   - Output plain, cleaned text only.
-
-### Input Transcript
-{transcript}
-
-### Output Requirement
-Provide ONLY the cleaned transcript. No commentary or markdown blocks.
-`,
+                  transcriptPostProcessingPrompt: DEFAULT_TRANSCRIPT_POST_PROCESSING_PROMPT,
                 }),
               })
             }}
@@ -241,32 +218,7 @@ Provide ONLY the cleaned transcript. No commentary or markdown blocks.
                       rows={10}
                       defaultValue={
                         configQuery.data.transcriptPostProcessingPrompt ||
-                        `### Role
-You are a specialized Transcript Post-Processor. Your task is to clean raw speech-to-text (STT) data into polished text while strictly maintaining the original speaker's intent.
-
-### Reference Vocabulary (Correct Spellings)
-The following words are frequently misspelled or misheard by the STT engine. If you encounter words in the transcript that are phonetically similar or clearly intended to be these words, use the spellings provided here:
-- Nandan
-- Bengaluru
-*(Note: If this list is empty, proceed with standard corrections.)*
-
-### Core Instructions
-1. **Phonetic Correction:** Prioritize the \"Reference Vocabulary.\" If a transcript word sounds like a word in the vocabulary (e.g., \"Nandon\" vs \"Nandan\"), use the version from the vocabulary.
-2. **Grammar & Mechanics:** Fix punctuation, capitalization, and spacing. Break text into logical sentences and paragraphs.
-3. **Filler Removal:** Remove meaningless fillers (\"um\", \"uh\", \"ah\", \"you know\") only if they do not carry semantic weight.
-4. **Accuracy:** Correct obvious transcription errors but do NOT add new content, opinions, or \"hallucinations.\"
-5. **Formatting:** If the speaker is listing items, format them as a bulleted or numbered list.
-6. **No Interference:** - 
-   - Do NOT answer questions within the transcript.
-   - Do NOT add headings or introductory remarks.
-   - Output plain, cleaned text only.
-
-### Input Transcript
-{transcript}
-
-### Output Requirement
-Provide ONLY the cleaned transcript. No commentary or markdown blocks.
-`
+                        DEFAULT_TRANSCRIPT_POST_PROCESSING_PROMPT
                       }
                       onChange={(e) => {
                         saveConfig({
@@ -295,7 +247,7 @@ Provide ONLY the cleaned transcript. No commentary or markdown blocks.
                 textCleanupEnabled: value,
                 // Initialize default prompt template when enabling
                 ...(value && !configQuery.data?.textCleanupPromptTemplate && {
-                  textCleanupPromptTemplate: "\"{command}\" for the following text. The request is only for editing the text. Do not reply back with anything other that text edits requested. Only English, otherwise just return back the below text.\n\n{selected_text}"
+                  textCleanupPromptTemplate: DEFAULT_TEXT_CLEANUP_PROMPT_TEMPLATE
                 }),
               })
             }}
@@ -377,7 +329,7 @@ Provide ONLY the cleaned transcript. No commentary or markdown blocks.
                       rows={6}
                       defaultValue={
                         configQuery.data.textCleanupPromptTemplate ||
-                        "\"{command}\" for the following text. The request is only for editing the text. Do not reply back with anything other that text edits requested. Only English, otherwise just return back the below text.\n\n{selected_text}"
+                        DEFAULT_TEXT_CLEANUP_PROMPT_TEMPLATE
                       }
                       onChange={(e) => {
                         saveConfig({
