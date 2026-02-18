@@ -16,20 +16,33 @@ const stopIcon = path.join(
 
 const buildMenu = (tray: Tray) =>
   Menu.buildFromTemplate([
-    {
-      label: state.isRecording ? "Cancel Recording" : "Start Recording",
-      click() {
-        if (state.isRecording) {
-          state.isRecording = false
-          tray.setImage(defaultIcon)
-          stopRecordingAndHidePanelWindow()
-          return
-        }
-        state.isRecording = true
-        tray.setImage(stopIcon)
-        showPanelWindowAndStartRecording()
-      },
-    },
+    ...(state.isRecording
+      ? [
+          {
+            label: "Stop Recording",
+            click() {
+              getWindowRendererHandlers("panel")?.finishRecording.send()
+            },
+          },
+          {
+            label: "Cancel Recording",
+            click() {
+              state.isRecording = false
+              tray.setImage(defaultIcon)
+              stopRecordingAndHidePanelWindow()
+            },
+          },
+        ]
+      : [
+          {
+            label: "Start Recording",
+            click() {
+              state.isRecording = true
+              tray.setImage(stopIcon)
+              showPanelWindowAndStartRecording()
+            },
+          },
+        ]),
     {
       label: "View History",
       click() {
@@ -71,11 +84,6 @@ export const initTray = () => {
   const tray = (_tray = new Tray(defaultIcon))
 
   tray.on("click", () => {
-    if (state.isRecording) {
-      getWindowRendererHandlers("panel")?.finishRecording.send()
-      return
-    }
-
     tray.popUpContextMenu(buildMenu(tray))
   })
 

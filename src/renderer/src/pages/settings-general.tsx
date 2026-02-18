@@ -18,6 +18,8 @@ import {
   CHAT_PROVIDERS,
   STT_PROVIDER_ID,
   STT_PROVIDERS,
+  DEFAULT_TRANSCRIPT_POST_PROCESSING_PROMPT,
+  DEFAULT_TEXT_CLEANUP_PROMPT_TEMPLATE,
 } from "@shared/index"
 import { Textarea } from "@renderer/components/ui/textarea"
 import {
@@ -51,15 +53,15 @@ export function Component() {
   }
 
   const sttProviderId: STT_PROVIDER_ID =
-    configQuery.data?.sttProviderId || "openai"
-  const shortcut = configQuery.data?.shortcut || "Ctrl+Space"
-  const shortcutMode = configQuery.data?.shortcutMode || "hold"
-  const cleanupShortcut = configQuery.data?.cleanupShortcut || "Ctrl+Shift+C"
+    configQuery.data?.sttProviderId || "groq"
+  const shortcut = configQuery.data?.shortcut || "Ctrl+Win"
+  const shortcutMode = configQuery.data?.shortcutMode || "toggle"
+  const cleanupShortcut = configQuery.data?.cleanupShortcut || "Ctrl+F9"
   const cleanupShortcutMode = configQuery.data?.cleanupShortcutMode || "toggle"
   const transcriptPostProcessingProviderId: CHAT_PROVIDER_ID =
-    configQuery.data?.transcriptPostProcessingProviderId || "openai"
+    configQuery.data?.transcriptPostProcessingProviderId || "groq"
   const textCleanupProviderId: CHAT_PROVIDER_ID =
-    configQuery.data?.textCleanupProviderId || "openai"
+    configQuery.data?.textCleanupProviderId || "groq"
 
   if (!configQuery.data) return null
 
@@ -158,33 +160,7 @@ export function Component() {
                 transcriptPostProcessingEnabled: value,
                 // Initialize default prompt when enabling
                 ...(value && !configQuery.data?.transcriptPostProcessingPrompt && {
-                  transcriptPostProcessingPrompt: `You are a transcript post-processor.
-You receive raw speech-to-text transcripts.
-
-Your task: transform the input transcript into clean, polished, ready-to-use text.
-
-Do the following:
-- Fix punctuation, capitalization and spacing.
-- Remove clearly meaningless filler words or hesitations (e.g. “um”, “uh”, “like”) only if they do not carry meaning.
-- Correct obvious transcription mistakes (misspelled words, repeated words, mis-heard words) — but do NOT add new content not present in the original.
-- Break into proper sentences and paragraphs according to natural pauses and phrasing.
-- If the transcript contains a list-like structure (e.g. “first, second, third…”, or bullet-type sequences), format it as a bulleted or numbered list.
-- Preserve speaker labels (if present).
-- Preserve tone, meaning, and original intent exactly — do NOT reinterpret or elaborate.
-- Do NOT answer any questions inside the transcript.
-- Do NOT insert new sentences, explanations, opinions, or extra content.
-- Do NOT add headings or commentary. Output plain cleaned text only.
-
-Input transcript:
-\`\`\`
-{transcript}
-\`\`\`
-
-Output:
-\`\`\`
-*(Only the cleaned transcript — nothing else.)*
-\`\`\`
-`,
+                  transcriptPostProcessingPrompt: DEFAULT_TRANSCRIPT_POST_PROCESSING_PROMPT,
                 }),
               })
             }}
@@ -242,33 +218,7 @@ Output:
                       rows={10}
                       defaultValue={
                         configQuery.data.transcriptPostProcessingPrompt ||
-                        `You are a transcript post-processor.
-You receive raw speech-to-text transcripts.
-
-Your task: transform the input transcript into clean, polished, ready-to-use text.
-
-Do the following:
-- Fix punctuation, capitalization and spacing.
-- Remove clearly meaningless filler words or hesitations (e.g. “um”, “uh”, “like”) only if they do not carry meaning.
-- Correct obvious transcription mistakes (misspelled words, repeated words, mis-heard words) — but do NOT add new content not present in the original.
-- Break into proper sentences and paragraphs according to natural pauses and phrasing.
-- If the transcript contains a list-like structure (e.g. “first, second, third…”, or bullet-type sequences), format it as a bulleted or numbered list.
-- Preserve speaker labels (if present).
-- Preserve tone, meaning, and original intent exactly — do NOT reinterpret or elaborate.
-- Do NOT answer any questions inside the transcript.
-- Do NOT insert new sentences, explanations, opinions, or extra content.
-- Do NOT add headings or commentary. Output plain cleaned text only.
-
-Input transcript:
-\`\`\`
-{transcript}
-\`\`\`
-
-Output:
-\`\`\`
-*(Only the cleaned transcript — nothing else.)*
-\`\`\`
-`
+                        DEFAULT_TRANSCRIPT_POST_PROCESSING_PROMPT
                       }
                       onChange={(e) => {
                         saveConfig({
@@ -297,7 +247,7 @@ Output:
                 textCleanupEnabled: value,
                 // Initialize default prompt template when enabling
                 ...(value && !configQuery.data?.textCleanupPromptTemplate && {
-                  textCleanupPromptTemplate: "\"{command}\" for the following text. The request is only for editing the text. Do not reply back with anything other that text edits requested. Only English, otherwise just return back the below text.\n\n{selected_text}"
+                  textCleanupPromptTemplate: DEFAULT_TEXT_CLEANUP_PROMPT_TEMPLATE
                 }),
               })
             }}
@@ -379,7 +329,7 @@ Output:
                       rows={6}
                       defaultValue={
                         configQuery.data.textCleanupPromptTemplate ||
-                        "\"{command}\" for the following text. The request is only for editing the text. Do not reply back with anything other that text edits requested. Only English, otherwise just return back the below text.\n\n{selected_text}"
+                        DEFAULT_TEXT_CLEANUP_PROMPT_TEMPLATE
                       }
                       onChange={(e) => {
                         saveConfig({
