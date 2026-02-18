@@ -51,15 +51,15 @@ export function Component() {
   }
 
   const sttProviderId: STT_PROVIDER_ID =
-    configQuery.data?.sttProviderId || "openai"
-  const shortcut = configQuery.data?.shortcut || "Ctrl+Space"
-  const shortcutMode = configQuery.data?.shortcutMode || "hold"
-  const cleanupShortcut = configQuery.data?.cleanupShortcut || "Ctrl+Shift+C"
+    configQuery.data?.sttProviderId || "groq"
+  const shortcut = configQuery.data?.shortcut || "Ctrl+Win"
+  const shortcutMode = configQuery.data?.shortcutMode || "toggle"
+  const cleanupShortcut = configQuery.data?.cleanupShortcut || "Ctrl+F9"
   const cleanupShortcutMode = configQuery.data?.cleanupShortcutMode || "toggle"
   const transcriptPostProcessingProviderId: CHAT_PROVIDER_ID =
-    configQuery.data?.transcriptPostProcessingProviderId || "openai"
+    configQuery.data?.transcriptPostProcessingProviderId || "groq"
   const textCleanupProviderId: CHAT_PROVIDER_ID =
-    configQuery.data?.textCleanupProviderId || "openai"
+    configQuery.data?.textCleanupProviderId || "groq"
 
   if (!configQuery.data) return null
 
@@ -158,32 +158,31 @@ export function Component() {
                 transcriptPostProcessingEnabled: value,
                 // Initialize default prompt when enabling
                 ...(value && !configQuery.data?.transcriptPostProcessingPrompt && {
-                  transcriptPostProcessingPrompt: `You are a transcript post-processor.
-You receive raw speech-to-text transcripts.
+                  transcriptPostProcessingPrompt: `### Role
+You are a specialized Transcript Post-Processor. Your task is to clean raw speech-to-text (STT) data into polished text while strictly maintaining the original speaker's intent.
 
-Your task: transform the input transcript into clean, polished, ready-to-use text.
+### Reference Vocabulary (Correct Spellings)
+The following words are frequently misspelled or misheard by the STT engine. If you encounter words in the transcript that are phonetically similar or clearly intended to be these words, use the spellings provided here:
+- Nandan
+- Bengaluru
+*(Note: If this list is empty, proceed with standard corrections.)*
 
-Do the following:
-- Fix punctuation, capitalization and spacing.
-- Remove clearly meaningless filler words or hesitations (e.g. “um”, “uh”, “like”) only if they do not carry meaning.
-- Correct obvious transcription mistakes (misspelled words, repeated words, mis-heard words) — but do NOT add new content not present in the original.
-- Break into proper sentences and paragraphs according to natural pauses and phrasing.
-- If the transcript contains a list-like structure (e.g. “first, second, third…”, or bullet-type sequences), format it as a bulleted or numbered list.
-- Preserve speaker labels (if present).
-- Preserve tone, meaning, and original intent exactly — do NOT reinterpret or elaborate.
-- Do NOT answer any questions inside the transcript.
-- Do NOT insert new sentences, explanations, opinions, or extra content.
-- Do NOT add headings or commentary. Output plain cleaned text only.
+### Core Instructions
+1. **Phonetic Correction:** Prioritize the \"Reference Vocabulary.\" If a transcript word sounds like a word in the vocabulary (e.g., \"Nandon\" vs \"Nandan\"), use the version from the vocabulary.
+2. **Grammar & Mechanics:** Fix punctuation, capitalization, and spacing. Break text into logical sentences and paragraphs.
+3. **Filler Removal:** Remove meaningless fillers (\"um\", \"uh\", \"ah\", \"you know\") only if they do not carry semantic weight.
+4. **Accuracy:** Correct obvious transcription errors but do NOT add new content, opinions, or \"hallucinations.\"
+5. **Formatting:** If the speaker is listing items, format them as a bulleted or numbered list.
+6. **No Interference:** - 
+   - Do NOT answer questions within the transcript.
+   - Do NOT add headings or introductory remarks.
+   - Output plain, cleaned text only.
 
-Input transcript:
-\`\`\`
+### Input Transcript
 {transcript}
-\`\`\`
 
-Output:
-\`\`\`
-*(Only the cleaned transcript — nothing else.)*
-\`\`\`
+### Output Requirement
+Provide ONLY the cleaned transcript. No commentary or markdown blocks.
 `,
                 }),
               })
@@ -242,32 +241,31 @@ Output:
                       rows={10}
                       defaultValue={
                         configQuery.data.transcriptPostProcessingPrompt ||
-                        `You are a transcript post-processor.
-You receive raw speech-to-text transcripts.
+                        `### Role
+You are a specialized Transcript Post-Processor. Your task is to clean raw speech-to-text (STT) data into polished text while strictly maintaining the original speaker's intent.
 
-Your task: transform the input transcript into clean, polished, ready-to-use text.
+### Reference Vocabulary (Correct Spellings)
+The following words are frequently misspelled or misheard by the STT engine. If you encounter words in the transcript that are phonetically similar or clearly intended to be these words, use the spellings provided here:
+- Nandan
+- Bengaluru
+*(Note: If this list is empty, proceed with standard corrections.)*
 
-Do the following:
-- Fix punctuation, capitalization and spacing.
-- Remove clearly meaningless filler words or hesitations (e.g. “um”, “uh”, “like”) only if they do not carry meaning.
-- Correct obvious transcription mistakes (misspelled words, repeated words, mis-heard words) — but do NOT add new content not present in the original.
-- Break into proper sentences and paragraphs according to natural pauses and phrasing.
-- If the transcript contains a list-like structure (e.g. “first, second, third…”, or bullet-type sequences), format it as a bulleted or numbered list.
-- Preserve speaker labels (if present).
-- Preserve tone, meaning, and original intent exactly — do NOT reinterpret or elaborate.
-- Do NOT answer any questions inside the transcript.
-- Do NOT insert new sentences, explanations, opinions, or extra content.
-- Do NOT add headings or commentary. Output plain cleaned text only.
+### Core Instructions
+1. **Phonetic Correction:** Prioritize the \"Reference Vocabulary.\" If a transcript word sounds like a word in the vocabulary (e.g., \"Nandon\" vs \"Nandan\"), use the version from the vocabulary.
+2. **Grammar & Mechanics:** Fix punctuation, capitalization, and spacing. Break text into logical sentences and paragraphs.
+3. **Filler Removal:** Remove meaningless fillers (\"um\", \"uh\", \"ah\", \"you know\") only if they do not carry semantic weight.
+4. **Accuracy:** Correct obvious transcription errors but do NOT add new content, opinions, or \"hallucinations.\"
+5. **Formatting:** If the speaker is listing items, format them as a bulleted or numbered list.
+6. **No Interference:** - 
+   - Do NOT answer questions within the transcript.
+   - Do NOT add headings or introductory remarks.
+   - Output plain, cleaned text only.
 
-Input transcript:
-\`\`\`
+### Input Transcript
 {transcript}
-\`\`\`
 
-Output:
-\`\`\`
-*(Only the cleaned transcript — nothing else.)*
-\`\`\`
+### Output Requirement
+Provide ONLY the cleaned transcript. No commentary or markdown blocks.
 `
                       }
                       onChange={(e) => {
