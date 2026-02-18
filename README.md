@@ -57,6 +57,10 @@ When you trigger the cleanup shortcut **without selecting any text**, Whispo ent
 
 ### ⚙️ Powerful Configuration
 - **Local Privacy**: Data is stored locally on your machine.
+  - **Config File Location**:
+    - **Windows**: `%APPDATA%\app.whispo\config.json`
+  - **Recordings Folder**:
+    - **Windows**: `%APPDATA%\app.whispo\recordings\`
 - **Model Support**:
     - **Transcription**: Uses OpenAI Whisper (via OpenAI or Groq API).
     - **LLM Processing**: Supports OpenAI, Groq, and Gemini for text post-processing.
