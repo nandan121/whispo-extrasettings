@@ -169,6 +169,113 @@ export function Component() {
           />
         </Control>
       </ControlGroup>
+
+      <ControlGroup title="OpenAI Compat A">
+        <Control label="API Key" className="px-3">
+          <Input
+            type="password"
+            defaultValue={configQuery.data.custom1ApiKey}
+            onChange={(e) => {
+              saveConfig({
+                custom1ApiKey: e.currentTarget.value,
+              })
+            }}
+          />
+        </Control>
+
+        <Control label="API Base URL" className="px-3">
+          <Input
+            type="url"
+            placeholder="https://your-provider.com/v1"
+            defaultValue={configQuery.data.custom1BaseUrl}
+            onChange={(e) => {
+              saveConfig({
+                custom1BaseUrl: e.currentTarget.value,
+              })
+            }}
+          />
+        </Control>
+
+        <Control label="STT Model" className="px-3">
+          <Input
+            type="text"
+            placeholder="Leave blank if no STT support"
+            defaultValue={configQuery.data.custom1SttModel}
+            onChange={(e) => {
+              saveConfig({
+                custom1SttModel: e.currentTarget.value,
+              })
+            }}
+          />
+        </Control>
+
+        <Control label="Chat Model" className="px-3">
+          <Input
+            type="text"
+            placeholder="e.g. gpt-4o, llama-3, etc."
+            defaultValue={configQuery.data.custom1ChatModel}
+            onChange={(e) => {
+              saveConfig({
+                custom1ChatModel: e.currentTarget.value,
+              })
+            }}
+          />
+        </Control>
+      </ControlGroup>
+
+      <ControlGroup title="OpenAI Compat B">
+        <Control label="API Key" className="px-3">
+          <Input
+            type="password"
+            defaultValue={configQuery.data.custom2ApiKey}
+            onChange={(e) => {
+              saveConfig({
+                custom2ApiKey: e.currentTarget.value,
+              })
+            }}
+          />
+        </Control>
+
+        <Control label="API Base URL" className="px-3">
+          <Input
+            type="url"
+            placeholder="https://your-provider.com/v1"
+            defaultValue={configQuery.data.custom2BaseUrl}
+            onChange={(e) => {
+              saveConfig({
+                custom2BaseUrl: e.currentTarget.value,
+              })
+            }}
+          />
+        </Control>
+
+        <Control label="STT Model" className="px-3">
+          <Input
+            type="text"
+            placeholder="Leave blank if no STT support"
+            defaultValue={configQuery.data.custom2SttModel}
+            onChange={(e) => {
+              saveConfig({
+                custom2SttModel: e.currentTarget.value,
+              })
+            }}
+          />
+        </Control>
+
+        <Control label="Chat Model" className="px-3">
+          <Input
+            type="text"
+            placeholder="e.g. gpt-4o, llama-3, etc."
+            defaultValue={configQuery.data.custom2ChatModel}
+            onChange={(e) => {
+              saveConfig({
+                custom2ChatModel: e.currentTarget.value,
+              })
+            }}
+          />
+        </Control>
+      </ControlGroup>
     </div>
   )
 }
+

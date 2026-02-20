@@ -160,17 +160,57 @@ export const router = {
 
       const config = configStore.get()
       
+      // ---------------------------------------------------------------------------
+      // Resolve STT credentials ONLY for the currently selected STT provider.
+      // Other providers' settings are never read, so missing STT models on
+      // non-STT providers cannot cause validation failures.
+      // ---------------------------------------------------------------------------
+      const sttProviderId = config.sttProviderId || "groq"
+
+      let sttApiKey: string
+      let sttBaseUrl: string
+      let sttModel: string
+
+      switch (sttProviderId) {
+        case "groq":
+          sttApiKey = config.groqApiKey || ""
+          sttBaseUrl = config.groqBaseUrl || "https://api.groq.com/openai/v1"
+          sttModel = config.groqSttModel || "whisper-large-v3"
+          break
+        case "openai":
+          sttApiKey = config.openaiApiKey || ""
+          sttBaseUrl = config.openaiBaseUrl || "https://api.openai.com/v1"
+          sttModel = config.openaiSttModel || "whisper-1"
+          break
+        case "custom1":
+          sttApiKey = config.custom1ApiKey || ""
+          sttBaseUrl = config.custom1BaseUrl || ""
+          sttModel = config.custom1SttModel || ""
+          break
+        case "custom2":
+          sttApiKey = config.custom2ApiKey || ""
+          sttBaseUrl = config.custom2BaseUrl || ""
+          sttModel = config.custom2SttModel || ""
+          break
+        default:
+          sttApiKey = config.groqApiKey || ""
+          sttBaseUrl = config.groqBaseUrl || "https://api.groq.com/openai/v1"
+          sttModel = config.groqSttModel || "whisper-large-v3"
+      }
+
+      if (!sttModel) {
+        throw new Error(
+          `The selected STT provider "${sttProviderId}" does not have an STT model configured. ` +
+          `Please set an STT model in the Providers tab, or choose a different STT provider.`
+        )
+      }
+
       const form = new FormData()
       form.append(
         "file",
         new File([input.recording], "recording.webm", { type: "audio/webm" }),
       )
-      form.append(
-        "model",
-        config.sttProviderId === "groq"
-          ? config.groqSttModel || "whisper-large-v3"
-          : config.openaiSttModel || "whisper-1",
-      )
+      form.append("model", sttModel)
       form.append("response_format", "verbose_json")
 
       // Add language if specified and not "auto"
@@ -186,19 +226,12 @@ export const router = {
         form.append("prompt", config.transcriptionPrompt!)
       }
 
-      const groqBaseUrl = config.groqBaseUrl || "https://api.groq.com/openai/v1"
-      const openaiBaseUrl = config.openaiBaseUrl || "https://api.openai.com/v1"
-
-      const apiUrl = config.sttProviderId === "groq"
-        ? `${groqBaseUrl}/audio/transcriptions`
-        : `${openaiBaseUrl}/audio/transcriptions`
-
       const transcriptResponse = await fetch(
-        apiUrl,
+        `${sttBaseUrl}/audio/transcriptions`,
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${config.sttProviderId === "groq" ? config.groqApiKey : config.openaiApiKey}`,
+            Authorization: `Bearer ${sttApiKey}`,
           },
           body: form,
         },
