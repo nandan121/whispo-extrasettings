@@ -7,6 +7,14 @@ export const STT_PROVIDERS = [
     label: "Groq",
     value: "groq",
   },
+  {
+    label: "OpenAI Compat A",
+    value: "custom1",
+  },
+  {
+    label: "OpenAI Compat B",
+    value: "custom2",
+  },
 ] as const
 
 export type STT_PROVIDER_ID = (typeof STT_PROVIDERS)[number]["value"]
@@ -23,6 +31,14 @@ export const CHAT_PROVIDERS = [
   {
     label: "Gemini",
     value: "gemini",
+  },
+  {
+    label: "OpenAI Compat A",
+    value: "custom1",
+  },
+  {
+    label: "OpenAI Compat B",
+    value: "custom2",
   },
 ] as const
 

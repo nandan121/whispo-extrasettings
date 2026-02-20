@@ -30,6 +30,16 @@ export type Config = {
   geminiBaseUrl?: string
   geminiChatModel?: string
 
+  custom1ApiKey?: string
+  custom1BaseUrl?: string
+  custom1SttModel?: string
+  custom1ChatModel?: string
+
+  custom2ApiKey?: string
+  custom2BaseUrl?: string
+  custom2SttModel?: string
+  custom2ChatModel?: string
+
   transcriptPostProcessingEnabled?: boolean
   transcriptPostProcessingProviderId?: CHAT_PROVIDER_ID
   transcriptPostProcessingPrompt?: string
