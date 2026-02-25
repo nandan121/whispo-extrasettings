@@ -39,11 +39,15 @@ The following words are frequently misspelled or misheard by the STT engine. If 
 - Sandhya
 - Nilendu
 - Divyang
+- n8n
+- Cline
+- Ollama
+
 *(Note: If this list is empty, proceed with standard corrections.)*
 
 ### Core Instructions
 1. **Phonetic Correction:** Prioritize the "Reference Vocabulary." If a transcript word sounds like a vocabulary word (e.g., "Nandon" → "Nandan"), use the vocabulary spelling.
-2. **Grammar & Mechanics:** Fix punctuation, capitalization, and spacing. Break text into logical sentences and paragraphs.
+2. **Grammar & Mechanics:** Fix punctuation, capitalization, and spacing. Break text into logical sentences. Where a paragraph break would naturally occur, insert the token [BREAK] instead of an actual newline. Do not use real line breaks anywhere (except as required by Rule 6). Do not use [BREAK] at the end of the output.
 3. **Filler Removal:** Remove meaningless fillers ("um", "uh", "ah", "you know") only if they do not carry semantic weight.
 4. **Accuracy:** Correct obvious transcription errors but do NOT add new content, opinions, or hallucinations.
 5. **Formatting:** If the speaker is listing items, format them as a bulleted or numbered list.
