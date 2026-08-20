@@ -119,7 +119,7 @@ export function Component() {
         <Control label="Chat Model" className="px-3">
           <Input
             type="text"
-            placeholder="llama-3.3-70b-versatile"
+            placeholder="openai/gpt-oss-120b"
             defaultValue={configQuery.data.groqChatModel}
             onChange={(e) => {
               saveConfig({
@@ -159,7 +159,7 @@ export function Component() {
         <Control label="Chat Model" className="px-3">
           <Input
             type="text"
-            placeholder="gemini-flash-latest"
+            placeholder="gemini-flash-lite-latest"
             defaultValue={configQuery.data.geminiChatModel}
             onChange={(e) => {
               saveConfig({
@@ -186,7 +186,7 @@ export function Component() {
         <Control label="API Base URL" className="px-3">
           <Input
             type="url"
-            placeholder="https://your-provider.com/v1"
+            placeholder="https://integrate.api.nvidia.com/v1"
             defaultValue={configQuery.data.custom1BaseUrl}
             onChange={(e) => {
               saveConfig({
@@ -212,7 +212,7 @@ export function Component() {
         <Control label="Chat Model" className="px-3">
           <Input
             type="text"
-            placeholder="e.g. gpt-4o, llama-3, etc."
+            placeholder="google/diffusiongemma-26b-a4b-it"
             defaultValue={configQuery.data.custom1ChatModel}
             onChange={(e) => {
               saveConfig({
@@ -239,7 +239,7 @@ export function Component() {
         <Control label="API Base URL" className="px-3">
           <Input
             type="url"
-            placeholder="https://your-provider.com/v1"
+            placeholder="https://openrouter.ai/api/v1"
             defaultValue={configQuery.data.custom2BaseUrl}
             onChange={(e) => {
               saveConfig({
@@ -265,7 +265,7 @@ export function Component() {
         <Control label="Chat Model" className="px-3">
           <Input
             type="text"
-            placeholder="e.g. gpt-4o, llama-3, etc."
+            placeholder="google/gemma-4-26b-a4b-it:free"
             defaultValue={configQuery.data.custom2ChatModel}
             onChange={(e) => {
               saveConfig({
