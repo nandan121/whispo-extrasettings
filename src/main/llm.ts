@@ -18,7 +18,7 @@ function resolveChatProvider(
       return {
         apiKey: config.groqApiKey || "",
         baseUrl: config.groqBaseUrl || "https://api.groq.com/openai/v1",
-        chatModel: config.groqChatModel || "llama-3.3-70b-versatile",
+        chatModel: config.groqChatModel || "openai/gpt-oss-120b",
       }
     case "openai":
       return {
@@ -29,21 +29,21 @@ function resolveChatProvider(
     case "custom1":
       return {
         apiKey: config.custom1ApiKey || "",
-        baseUrl: config.custom1BaseUrl || "",
-        chatModel: config.custom1ChatModel || "",
+        baseUrl: config.custom1BaseUrl || "https://integrate.api.nvidia.com/v1",
+        chatModel: config.custom1ChatModel || "google/diffusiongemma-26b-a4b-it",
       }
     case "custom2":
       return {
         apiKey: config.custom2ApiKey || "",
-        baseUrl: config.custom2BaseUrl || "",
-        chatModel: config.custom2ChatModel || "",
+        baseUrl: config.custom2BaseUrl || "https://openrouter.ai/api/v1",
+        chatModel: config.custom2ChatModel || "google/gemma-4-26b-a4b-it:free",
       }
     default:
       // Fall back to groq for legacy / undefined
       return {
         apiKey: config.groqApiKey || "",
         baseUrl: config.groqBaseUrl || "https://api.groq.com/openai/v1",
-        chatModel: config.groqChatModel || "llama-3.3-70b-versatile",
+        chatModel: config.groqChatModel || "openai/gpt-oss-120b",
       }
   }
 }
@@ -70,7 +70,7 @@ async function openAiCompatChatCompletion(
     body: JSON.stringify({
       temperature: 0,
       model,
-      messages: [{ role: "system", content: prompt }],
+      messages: [{ role: "user", content: prompt }],
     }),
   })
 
@@ -113,7 +113,7 @@ export async function postProcessTranscript(transcript: string) {
 
     const gai = new GoogleGenerativeAI(config.geminiApiKey)
     const gModel = gai.getGenerativeModel({
-      model: config.geminiChatModel || "gemini-flash-latest",
+      model: config.geminiChatModel || "gemini-flash-lite-latest",
     })
 
     const result = await gModel.generateContent([prompt], {
@@ -162,7 +162,7 @@ export async function processTextCleanup(selectedText: string, command: string) 
 
     const gai = new GoogleGenerativeAI(config.geminiApiKey)
     const gModel = gai.getGenerativeModel({
-      model: config.geminiChatModel || "gemini-flash-latest",
+      model: config.geminiChatModel || "gemini-flash-lite-latest",
     })
 
     const result = await gModel.generateContent([prompt], {
