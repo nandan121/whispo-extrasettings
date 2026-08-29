@@ -28,7 +28,7 @@ https://github.com/user-attachments/assets/2344a817-f36c-42b0-9ebc-cdd6e926b7a0
 - **Translation**: Translate foreign languages to English by setting the **Transcription Language** to "English" and speaking in any supported foreign language.
 
 ### ✨ AI Text Cleanup
-- **Contextual Editing**: Highlight text in any app and use the cleanup shortcut (default: `Ctrl+Shift+C`) to modify it.
+- **Contextual Editing**: Highlight text in any app and use the cleanup shortcut (default: `Ctrl+F9`) to modify it.
 - **Voice Commands**: Speak instructions like "make this more formal" or "fix grammar" to process the selected text.
 - **Customizable Prompts**: Configure your own system prompts using `{selected_text}` and `{command}` placeholders.
 
@@ -66,7 +66,7 @@ When you trigger the cleanup shortcut **without selecting any text**, Whispo ent
     - **LLM Processing**: Supports OpenAI, Groq, and Gemini for text post-processing.
 - **Custom API**: Option to use your own custom API URL for transcription services.
 - **Transcription Settings**:
-    - **Language Selection**: Choose from 58+ supported languages or use Auto-detect mode. Supports languages including English, Hindi, French, Spanish, German, Japanese, Chinese, Arabic, and many more.
+    - **Language Selection**: Choose from 50+ supported languages or use Auto-detect mode. Supports languages including English, Hindi, French, Spanish, German, Japanese, Chinese, Arabic, and many more.
         - ⚠️ **Note for Non-Latin Scripts**: When a specific language is selected for languages with non-Latin scripts (Hindi, Arabic, Chinese, etc.), transcription may be romanized (e.g., "Aap kaise hain?" instead of "आप कैसे हैं?"). For native script output, use **"Auto" (recommended)** which correctly detects and uses the appropriate script.
     - **Custom Words/Phrases**: Add domain-specific terms, technical vocabulary, or names to improve transcription accuracy. Examples: "ChatGPT, OpenAI, Groq, Whisper, Gemini, API".
         - **Toggle On/Off**: Enable "Use Custom Words" when speaking in the same language as your phrases (typically English). Disable it when switching to other languages to avoid romanization and get native script output.
@@ -139,7 +139,8 @@ When you trigger Command Mode in push-to-talk mode:
 
 #### Additional Resources
 
-For more information about supported keyboard shortcuts, see: https://docs.wisprflow.ai/articles/5797030187-supported-unsupported-keyboard-hotkey-shortcuts 
+For more information about supported keyboard shortcuts, see: https://docs.wisprflow.ai/articles/2612050838-supported-unsupported-keyboard-hotkey-shortcuts 
+
 ## License
 
 [AGPL-3.0](./LICENSE)
