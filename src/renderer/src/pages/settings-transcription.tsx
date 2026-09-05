@@ -65,7 +65,7 @@ export function Component() {
 
             <ControlGroup
                 title="Custom Words"
-                endDescription='Example: "ChatGPT, OpenAI, Groq, Gemini"'
+                endDescription='Example: "ChatGPT, OpenAI, Groq, Gemini". Sent as prompt for Whisper providers, or as custom vocabulary for Gemini.'
             >
                 <div className="px-3 py-3 bg-amber-50 dark:bg-amber-950/20 border-l-4 border-amber-500 text-sm space-y-2">
                     <div className="flex gap-2">

@@ -29,6 +29,8 @@ export type Config = {
   geminiApiKey?: string
   geminiBaseUrl?: string
   geminiChatModel?: string
+  geminiSttModel?: string
+  geminiLiveSttModel?: string
 
   custom1ApiKey?: string
   custom1BaseUrl?: string
