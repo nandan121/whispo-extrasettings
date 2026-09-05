@@ -24,7 +24,9 @@ export function Component() {
   )
   const [recording, setRecording] = useState(false)
   const [liveInterim, setLiveInterim] = useState("")
+  const [liveStatus, setLiveStatus] = useState("")
   const isConfirmedRef = useRef(false)
+  const startingRef = useRef(false)
   const liveRef = useRef<{
     transcriber: GeminiLiveTranscriber
     stopMic: () => void
@@ -77,53 +79,99 @@ export function Component() {
   const recorderRef = useRef<Recorder | null>(null)
 
   // --- Gemini Live path (AI Studio key, true streaming) -------------------
+  // The recording indicator (tray + visualizer + status) is set BEFORE
+  // connecting so a slow/failed connection never looks like "nothing".
   const startLiveRecording = async () => {
-    const config = await tipcClient.getConfig()
+    // Instant indicator: tray + red bars + status line.
+    setRecording(true)
+    setLiveInterim("")
+    setLiveStatus("Connecting…")
+    tipcClient.recordEvent({ type: "start" })
+
+    const fail = (error: unknown) => {
+      console.error("[GEMINI-LIVE]", error)
+      liveRef.current = null
+      setRecording(false)
+      setLiveStatus("")
+      setVisualizerData(() => getInitialVisualizerData())
+      tipcClient.recordEvent({ type: "end" })
+      tipcClient.hidePanelWindow()
+      tipcClient.displayError({
+        title: error instanceof Error ? error.name : "Error",
+        message:
+          error instanceof Error ? error.message : "Live transcription failed",
+      })
+    }
+
+    let config
+    try {
+      config = await tipcClient.getConfig()
+    } catch (error) {
+      fail(error)
+      return
+    }
     const apiKey = config.geminiApiKey || ""
     if (!apiKey) {
-      throw new Error(
-        'Gemini API key is required. Add your AI Studio key in Settings → Providers → Gemini ("Get API key" at aistudio.google.com).',
+      fail(
+        new Error(
+          'Gemini API key is required. Add your AI Studio key in Settings → Providers → Gemini ("Get API key" at aistudio.google.com).',
+        ),
       )
+      return
     }
 
     const transcriber = new GeminiLiveTranscriber({
-      onInterim: (text) => setLiveInterim(text),
+      onInterim: (text) => {
+        setLiveInterim(text)
+        setLiveStatus((s) => (s === "Connecting…" ? "Listening…" : s))
+      },
       onError: (message) => {
+        // Mid-session streaming hiccup: show it, don't nuke the session.
         console.error("[GEMINI-LIVE]", message)
+        setLiveStatus(message.slice(0, 120))
       },
     })
-    await transcriber.connect({
-      apiKey,
-      model: config.geminiLiveSttModel || GEMINI_LIVE_DEFAULT_MODEL,
-      languageCodes: toGeminiLanguageCodes(config.transcriptionLanguage),
-      customVocabulary: toGeminiCustomVocabulary(
-        config.transcriptionPrompt,
-        config.transcriptionPromptEnabled,
-      ),
-    })
 
-    const startTime = Date.now()
-    const stopMic = await startMicPcmStream((pcm16) => {
-      // Feed audio to Gemini + a cheap level meter for the visualizer.
-      transcriber.sendPcm16Chunk(pcm16)
-      const view = new Int16Array(pcm16)
-      let peak = 0
-      for (let i = 0; i < view.length; i += 8) {
-        const a = Math.abs(view[i])
-        if (a > peak) peak = a
-      }
-      const rms = Math.min(1, Math.max(0.01, peak / 12000))
-      setVisualizerData((prev) => {
-        const data = [...prev, rms]
-        if (data.length > VISUALIZER_BUFFER_LENGTH) data.shift()
-        return data
+    try {
+      await transcriber.connect({
+        apiKey,
+        model: config.geminiLiveSttModel || GEMINI_LIVE_DEFAULT_MODEL,
+        languageCodes: toGeminiLanguageCodes(config.transcriptionLanguage),
+        customVocabulary: toGeminiCustomVocabulary(
+          config.transcriptionPrompt,
+          config.transcriptionPromptEnabled,
+        ),
       })
-    })
+    } catch (error) {
+      fail(error)
+      return
+    }
 
-    liveRef.current = { transcriber, stopMic, startTime }
-    setLiveInterim("")
-    setRecording(true)
-    tipcClient.recordEvent({ type: "start" })
+    let stopMic: () => void
+    try {
+      const startTime = Date.now()
+      stopMic = await startMicPcmStream((pcm16) => {
+        // Feed audio to Gemini + a cheap level meter for the visualizer.
+        transcriber.sendPcm16Chunk(pcm16)
+        const view = new Int16Array(pcm16)
+        let peak = 0
+        for (let i = 0; i < view.length; i += 8) {
+          const a = Math.abs(view[i])
+          if (a > peak) peak = a
+        }
+        const rms = Math.min(1, Math.max(0.01, peak / 12000))
+        setVisualizerData((prev) => {
+          const data = [...prev, rms]
+          if (data.length > VISUALIZER_BUFFER_LENGTH) data.shift()
+          return data
+        })
+      })
+      liveRef.current = { transcriber, stopMic, startTime }
+      setLiveStatus("Listening…")
+    } catch (error) {
+      transcriber.close()
+      fail(error)
+    }
   }
 
   const finishLiveRecording = async () => {
@@ -137,14 +185,32 @@ export function Component() {
 
     live.stopMic()
     await playSound("end_record")
-    const transcript = await live.transcriber.finish()
+    setLiveStatus("Transcribing…")
+    let transcript = ""
+    try {
+      transcript = await live.transcriber.finish()
+    } catch (error) {
+      setLiveStatus("")
+      setLiveInterim("")
+      tipcClient.hidePanelWindow()
+      tipcClient.displayError({
+        title: error instanceof Error ? error.name : "Error",
+        message:
+          error instanceof Error ? error.message : "Live transcription failed",
+      })
+      return
+    }
 
     if (transcript.trim().length === 0 || duration < 1000) {
+      // Same silence behavior as the file path: drop quietly, hide panel.
       console.log("Live recording too short or empty, ignoring")
       setLiveInterim("")
+      setLiveStatus("")
+      tipcClient.hidePanelWindow()
       return
     }
     setLiveInterim("")
+    setLiveStatus("")
     liveTranscribeMutation.mutate({ transcript, duration })
   }
 
@@ -156,18 +222,23 @@ export function Component() {
     live.transcriber.close()
     setRecording(false)
     setLiveInterim("")
+    setLiveStatus("")
     setVisualizerData(() => getInitialVisualizerData())
     tipcClient.recordEvent({ type: "end" })
   }
 
   const startRecordingAuto = async () => {
-    setVisualizerData(() => getInitialVisualizerData())
+    // Guard the async gap: rapid toggle presses must not double-start.
+    if (startingRef.current || liveRef.current) return
+    startingRef.current = true
     try {
+      setVisualizerData(() => getInitialVisualizerData())
       const config = await tipcClient.getConfig()
       if ((config.sttProviderId || "groq") === "gemini-live") {
         await startLiveRecording()
         return
       }
+      recorderRef.current?.startRecording()
     } catch (error) {
       tipcClient.hidePanelWindow()
       tipcClient.displayError({
@@ -175,9 +246,9 @@ export function Component() {
         message:
           error instanceof Error ? error.message : "Failed to start recording",
       })
-      return
+    } finally {
+      startingRef.current = false
     }
-    recorderRef.current?.startRecording()
   }
   // ------------------------------------------------------------------------
 
@@ -301,9 +372,9 @@ export function Component() {
         </div>
       ) : (
         <div className="flex h-full w-full flex-col justify-center rounded-xl px-2 transition-colors">
-          {liveInterim && (
+          {(liveInterim || liveStatus) && (
             <div className="truncate text-xs text-neutral-500 dark:text-neutral-300">
-              {liveInterim}
+              {liveInterim || liveStatus}
             </div>
           )}
           <div className="flex h-6 w-full rounded-xl transition-colors">

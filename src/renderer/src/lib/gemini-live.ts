@@ -7,12 +7,13 @@ import { GoogleGenAI, Modality } from "@google/genai"
 // you paste into Settings → Providers → Gemini. No GCP project, Vertex, or
 // OAuth required.
 //
-// Model: gemini-3.5-transcribe-live-preview
+// Model: gemini-3.5-transcribe-live (GA name on the Developer API; the
+// "-live-preview" suffixed ID is Vertex-only and fails with AI Studio keys).
 // Audio: 16-bit PCM mono at 16kHz, base64, via sendRealtimeInput.
 // Results: interimInputTranscription (partial) + inputTranscription (final).
 // ---------------------------------------------------------------------------
 
-export const GEMINI_LIVE_DEFAULT_MODEL = "gemini-3.5-transcribe-live-preview"
+export const GEMINI_LIVE_DEFAULT_MODEL = "gemini-3.5-transcribe-live"
 
 export type GeminiLiveCallbacks = {
   onInterim?: (text: string) => void

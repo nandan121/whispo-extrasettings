@@ -172,7 +172,7 @@ export function Component() {
         <Control label="STT Model (file)" className="px-3">
           <Input
             type="text"
-            placeholder="gemini-3.5-transcribe-preview"
+            placeholder="gemini-3.5-transcribe"
             defaultValue={configQuery.data.geminiSttModel}
             onChange={(e) => {
               saveConfig({
@@ -185,7 +185,7 @@ export function Component() {
         <Control label="STT Model (live)" className="px-3">
           <Input
             type="text"
-            placeholder="gemini-3.5-transcribe-live-preview"
+            placeholder="gemini-3.5-transcribe-live"
             defaultValue={configQuery.data.geminiLiveSttModel}
             onChange={(e) => {
               saveConfig({
