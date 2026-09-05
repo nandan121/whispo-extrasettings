@@ -3,11 +3,8 @@ import { Recorder } from "@renderer/lib/recorder"
 import { playSound } from "@renderer/lib/sound"
 import { cn } from "@renderer/lib/utils"
 import {
-  GEMINI_LIVE_DEFAULT_MODEL,
-  GeminiLiveTranscriber,
+  arrayBufferToBase64,
   startMicPcmStream,
-  toGeminiCustomVocabulary,
-  toGeminiLanguageCodes,
 } from "@renderer/lib/gemini-live"
 import { useMutation } from "@tanstack/react-query"
 import { useEffect, useRef, useState } from "react"
@@ -28,7 +25,6 @@ export function Component() {
   const isConfirmedRef = useRef(false)
   const startingRef = useRef(false)
   const liveRef = useRef<{
-    transcriber: GeminiLiveTranscriber
     stopMic: () => void
     startTime: number
   } | null>(null)
@@ -112,47 +108,12 @@ export function Component() {
       })
     }
 
-    let config
+    // The main process owns the API key and the Live WebSocket (Node
+    // transport) and reads the config itself; interim text arrives via
+    // the geminiLiveUpdate handler.
     try {
-      config = await tipcClient.getConfig()
-    } catch (error) {
-      fail(error)
-      return
-    }
-    const apiKey = config.geminiApiKey || ""
-    if (!apiKey) {
-      fail(
-        new Error(
-          'Gemini API key is required. Add your AI Studio key in Settings → Providers → Gemini ("Get API key" at aistudio.google.com).',
-        ),
-      )
-      return
-    }
-
-    const transcriber = new GeminiLiveTranscriber({
-      onInterim: (text) => {
-        setLiveInterim(text)
-        setLiveStatus((s) => (s === "Connecting…" ? "Listening…" : s))
-      },
-      onError: (message) => {
-        // Mid-session streaming hiccup: show it, don't nuke the session.
-        console.error("[GEMINI-LIVE]", message)
-        liveErrorRef.current = message
-        setLiveStatus(message.slice(0, 120))
-      },
-      onLog: (m) => liveLog(m),
-    })
-
-    try {
-      await transcriber.connect({
-        apiKey,
-        model: config.geminiLiveSttModel || GEMINI_LIVE_DEFAULT_MODEL,
-        languageCodes: toGeminiLanguageCodes(config.transcriptionLanguage),
-        customVocabulary: toGeminiCustomVocabulary(
-          config.transcriptionPrompt,
-          config.transcriptionPromptEnabled,
-        ),
-      })
+      liveLog("panel: starting main live session")
+      await tipcClient.geminiLiveStart()
     } catch (error) {
       fail(error)
       return
@@ -163,8 +124,10 @@ export function Component() {
       const startTime = Date.now()
       stopMic = await startMicPcmStream(
         (pcm16) => {
-          // Feed audio to Gemini + a cheap level meter for the visualizer.
-          transcriber.sendPcm16Chunk(pcm16)
+          // Stream audio to the main-process session + level meter.
+          tipcClient
+            .geminiLiveSendAudio({ chunk: arrayBufferToBase64(pcm16) })
+            .catch(() => {})
           const view = new Int16Array(pcm16)
           let peak = 0
           for (let i = 0; i < view.length; i += 8) {
@@ -180,11 +143,11 @@ export function Component() {
         },
         { onLog: (m) => liveLog(m) },
       )
-      liveRef.current = { transcriber, stopMic, startTime }
+      liveRef.current = { stopMic, startTime }
       setLiveStatus("Listening…")
       liveLog("panel: live session streaming")
     } catch (error) {
-      transcriber.close()
+      tipcClient.geminiLiveAbort().catch(() => {})
       fail(error)
     }
   }
@@ -204,7 +167,8 @@ export function Component() {
     setLiveStatus("Transcribing…")
     let transcript = ""
     try {
-      transcript = await live.transcriber.finish()
+      const result = await tipcClient.geminiLiveStop()
+      transcript = result.transcript
     } catch (error) {
       setLiveStatus("")
       setLiveInterim("")
@@ -218,8 +182,7 @@ export function Component() {
     }
 
     if (transcript.trim().length === 0 || duration < 1000) {
-      const sessionError =
-        liveErrorRef.current || live.transcriber.lastError
+      const sessionError = liveErrorRef.current
       setLiveInterim("")
       setLiveStatus("")
       if (sessionError) {
@@ -248,7 +211,7 @@ export function Component() {
     if (!live) return
     liveLog("panel: cancel")
     live.stopMic()
-    live.transcriber.close()
+    tipcClient.geminiLiveAbort().catch(() => {})
     setRecording(false)
     setLiveInterim("")
     setLiveStatus("")
@@ -324,6 +287,25 @@ export function Component() {
         duration,
       })
     })
+  }, [])
+
+  useEffect(() => {
+    // Interim text + session errors from the main-process live session.
+    // Only applies while a live recording is active; stale updates (e.g.
+    // from a previous session's teardown) are ignored.
+    const unlisten = rendererHandlers.geminiLiveUpdate.listen((update) => {
+      if (!liveRef.current) return
+      if (update.kind === "interim") {
+        setLiveInterim(update.text)
+        setLiveStatus((s) => (s === "Connecting…" ? "Listening…" : s))
+      } else {
+        console.error("[GEMINI-LIVE]", update.text)
+        liveErrorRef.current = update.text
+        setLiveStatus(update.text.slice(0, 120))
+      }
+    })
+
+    return unlisten
   }, [])
 
   useEffect(() => {

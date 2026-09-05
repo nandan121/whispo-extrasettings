@@ -16,8 +16,12 @@ import { RendererHandlers } from "./renderer-handlers"
 import { postProcessTranscript, processTextCleanup } from "./llm"
 import {
   GEMINI_FILE_MODEL_DEFAULT,
+  GEMINI_LIVE_MODEL_DEFAULT,
+  mapLanguageToCodes,
+  parseCustomVocabulary,
   transcribeAudioWithGeminiFile,
 } from "./gemini"
+import { MainGeminiLiveSession } from "./gemini-live"
 import { state } from "./state"
 import { updateTrayIcon } from "./tray"
 import { isAccessibilityGranted } from "./utils"
@@ -184,6 +188,21 @@ async function finalizeTranscription(
     if (isAccessibilityGranted()) {
       await writeText(finalText)
     }
+  }
+}
+
+// Single active Gemini Live session (one panel / one mic).
+let liveSession: MainGeminiLiveSession | null = null
+
+const sendLiveUpdateToPanel = (update: {
+  kind: "interim" | "error"
+  text: string
+}) => {
+  const panel = WINDOWS.get("panel")
+  if (panel) {
+    getRendererHandlers<RendererHandlers>(
+      panel.webContents,
+    ).geminiLiveUpdate.send(update)
   }
 }
 
@@ -496,6 +515,54 @@ export const router = {
     .action(async ({ input }) => {
       console.log(`[GEMINI-LIVE-R] ${input.message}`)
     }),
+
+  // --- Gemini Live (main-process Node WebSocket session) -------------------
+  // The renderer captures mic PCM and streams base64 chunks here; interim
+  // text flows back via the geminiLiveUpdate renderer handler.
+  geminiLiveStart: t.procedure.action(async () => {
+    const config = configStore.get()
+    const apiKey = config.geminiApiKey || ""
+    if (!apiKey) {
+      throw new Error(
+        'Gemini API key is required. Add your AI Studio key in Settings → Providers → Gemini ("Get API key" at aistudio.google.com).',
+      )
+    }
+    liveSession?.abort()
+    const session = (liveSession = new MainGeminiLiveSession({
+      onInterim: (text) =>
+        sendLiveUpdateToPanel({ kind: "interim", text }),
+      onError: (message) =>
+        sendLiveUpdateToPanel({ kind: "error", text: message }),
+    }))
+    await session.connect({
+      apiKey,
+      model: config.geminiLiveSttModel || GEMINI_LIVE_MODEL_DEFAULT,
+      languageCodes: mapLanguageToCodes(config.transcriptionLanguage),
+      customVocabulary:
+        config.transcriptionPromptEnabled !== false
+          ? parseCustomVocabulary(config.transcriptionPrompt)
+          : undefined,
+    })
+  }),
+
+  geminiLiveSendAudio: t.procedure
+    .input<{ chunk: string }>()
+    .action(async ({ input }) => {
+      liveSession?.sendPcm16Base64(input.chunk)
+    }),
+
+  geminiLiveStop: t.procedure.action(async () => {
+    const session = liveSession
+    liveSession = null
+    if (!session) return { transcript: "" }
+    const transcript = await session.finish()
+    return { transcript }
+  }),
+
+  geminiLiveAbort: t.procedure.action(async () => {
+    liveSession?.abort()
+    liveSession = null
+  }),
 
   clearHistory: t.procedure
     .input<{ days: number }>()
