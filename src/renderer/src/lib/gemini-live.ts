@@ -20,6 +20,8 @@ export type GeminiLiveCallbacks = {
   onFinal?: (text: string) => void
   onError?: (message: string) => void
   onClose?: () => void
+  /** Diagnostic sink (mirrored to the main-process log by the panel). */
+  onLog?: (message: string) => void
 }
 
 type LiveSession = Awaited<ReturnType<GoogleGenAI["live"]["connect"]>>
@@ -118,6 +120,17 @@ export class GeminiLiveTranscriber {
 
   constructor(private callbacks: GeminiLiveCallbacks = {}) {}
 
+  private log(message: string): void {
+    try {
+      this.callbacks.onLog?.(message)
+    } catch {
+      // logging must never break transcription
+    }
+  }
+
+  private chunkCount = 0
+  private msgCount = 0
+
   get finalTranscript(): string {
     return [...this.finals, this.currentInterim].join(" ").trim()
   }
@@ -140,9 +153,14 @@ export class GeminiLiveTranscriber {
     this.lastError = null
     this.finals = []
     this.currentInterim = ""
+    this.chunkCount = 0
+    const model = opts.model || GEMINI_LIVE_DEFAULT_MODEL
+    this.log(
+      `connect model=${model} lang=${opts.languageCodes?.join(",") || "auto"} vocab=${opts.customVocabulary?.length || 0}`,
+    )
 
     this.session = await this.ai.live.connect({
-      model: opts.model || GEMINI_LIVE_DEFAULT_MODEL,
+      model,
       config: {
         responseModalities: [Modality.TEXT],
         inputAudioTranscription: {
@@ -155,8 +173,28 @@ export class GeminiLiveTranscriber {
       callbacks: {
         onopen: () => {
           this.opened = true
+          this.log("ws open")
         },
         onmessage: (msg) => {
+          // Shape probe: log key structure (never full audio payloads).
+          const msgKeys =
+            msg && typeof msg === "object" ? Object.keys(msg).join(",") : typeof msg
+          const sc = (msg as { serverContent?: Record<string, unknown> })
+            ?.serverContent
+          const scKeys =
+            sc && typeof sc === "object" ? Object.keys(sc).join(",") : "-"
+          const interimProbe = (
+            sc as { interimInputTranscription?: { text?: unknown } } | undefined
+          )?.interimInputTranscription
+          const finalProbe = (
+            sc as { inputTranscription?: { text?: unknown } } | undefined
+          )?.inputTranscription
+          this.msgCount++
+          if (this.msgCount <= 5 || this.msgCount % 25 === 0) {
+            this.log(
+              `msg#${this.msgCount} keys=[${msgKeys}] server=[${scKeys}] interim=${typeof interimProbe?.text === "string" ? interimProbe.text.length : typeof interimProbe?.text} final=${typeof finalProbe?.text === "string" ? finalProbe.text.length : typeof finalProbe?.text}`,
+            )
+          }
           const serverContent = msg.serverContent
           if (!serverContent) return
 
@@ -183,12 +221,27 @@ export class GeminiLiveTranscriber {
         },
         onerror: (e) => {
           // Teardown of our own making (finish/close) is not a failure.
-          if (this.intentionalClose) return
+          if (this.intentionalClose) {
+            this.log("onerror ignored (intentional teardown)")
+            return
+          }
           const message = describeLiveError(e)
           this.lastError = message
+          this.log(
+            `onerror: ${message} rawKeys=${e && typeof e === "object" ? Object.keys(e).join(",") : typeof e}`,
+          )
           this.callbacks.onError?.(message)
         },
         onclose: (e) => {
+          const code =
+            e && typeof e === "object" && "code" in e
+              ? String(e.code)
+              : typeof e
+          const reason =
+            e && typeof e === "object" && "reason" in e
+              ? safeStringify(e.reason, 200)
+              : ""
+          this.log(`onclose: code=${code} reason=${reason} intentional=${this.intentionalClose}`)
           if (this.intentionalClose || this.finalTranscript) {
             this.callbacks.onClose?.()
             return
@@ -212,6 +265,10 @@ export class GeminiLiveTranscriber {
     // The SDK buffers until setup_complete; sending before onopen risks the
     // session being cancelled with an empty transcript on short clips.
     if (!this.opened) return
+    this.chunkCount++
+    if (this.chunkCount === 1 || this.chunkCount % 100 === 0) {
+      this.log(`send chunk#${this.chunkCount} bytes=${pcm16.byteLength}`)
+    }
     this.session.sendRealtimeInput({
       audio: {
         data: arrayBufferToBase64(pcm16),
@@ -222,6 +279,30 @@ export class GeminiLiveTranscriber {
 
   /** End the audio stream; resolves with the concatenated final transcript. */
   async finish(timeoutMs = 6000): Promise<string> {
+    // Belt and braces: finish() must never hang the panel.
+    return Promise.race([
+      this.finishInner(timeoutMs),
+      (async () => {
+        await new Promise((r) => setTimeout(r, 12000))
+        this.log("finish: overall 12s timeout, force-closing")
+        this.forceClose()
+        return this.finalTranscript
+      })(),
+    ])
+  }
+
+  private forceClose(): void {
+    this.intentionalClose = true
+    this.closed = true
+    try {
+      this.session?.close()
+    } catch {
+      // ignore
+    }
+    this.session = null
+  }
+
+  private async finishInner(timeoutMs: number): Promise<string> {
     const session = this.session
     this.session = null
     this.intentionalClose = true
@@ -249,6 +330,9 @@ export class GeminiLiveTranscriber {
     }
     try {
       session.sendRealtimeInput({ audioStreamEnd: true })
+      this.log(
+        `finish: audioStreamEnd sent after ${this.chunkCount} chunks, waiting ${timeoutMs}ms`,
+      )
     } catch {
       // ignore — session may already be closing
     }
@@ -265,18 +349,15 @@ export class GeminiLiveTranscriber {
       // ignore
     }
     this.closed = true
-    return this.finalTranscript
+    const result = this.finalTranscript
+    this.log(
+      `finish: done finals=${this.finals.length} resultLen=${result.length} err=${this.lastError ?? "-"}`,
+    )
+    return result
   }
 
   close(): void {
-    this.intentionalClose = true
-    this.closed = true
-    try {
-      this.session?.close()
-    } catch {
-      // ignore
-    }
-    this.session = null
+    this.forceClose()
   }
 }
 
@@ -287,7 +368,15 @@ export class GeminiLiveTranscriber {
 // ---------------------------------------------------------------------------
 export async function startMicPcmStream(
   onChunk: (pcm16: ArrayBuffer) => void,
+  hooks?: { onLog?: (message: string) => void },
 ): Promise<() => void> {
+  const log = (m: string) => {
+    try {
+      hooks?.onLog?.(m)
+    } catch {
+      // logging must never break capture
+    }
+  }
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: {
       deviceId: "default",
@@ -297,18 +386,33 @@ export async function startMicPcmStream(
     },
     video: false,
   })
+  log(
+    `mic: tracks=${stream.getAudioTracks().map((t) => `${t.label || "?"}/${t.readyState}`).join(",") || "none"}`,
+  )
 
   const AudioCtx =
     window.AudioContext ||
     (window as unknown as { webkitAudioContext: typeof AudioContext })
       .webkitAudioContext
   const audioContext = new AudioCtx({ sampleRate: 16000 })
+  log(`mic: context state=${audioContext.state} rate=${audioContext.sampleRate}`)
+  // Pages woken by a global hotkey have no DOM gesture: the context starts
+  // suspended and ScriptProcessor would never fire without an explicit resume.
+  try {
+    await audioContext.resume()
+  } catch (e) {
+    log(`mic: resume threw: ${e instanceof Error ? e.message : String(e)}`)
+  }
+  log(`mic: context state after resume=${audioContext.state}`)
   const source = audioContext.createMediaStreamSource(stream)
   // 4096 frames ≈ 256ms at 16kHz — good latency/overhead balance.
   const processor = audioContext.createScriptProcessor(4096, 1, 1)
 
+  let chunks = 0
   processor.onaudioprocess = (event) => {
     const input = event.inputBuffer.getChannelData(0)
+    chunks++
+    if (chunks === 1 || chunks % 100 === 0) log(`mic: chunk#${chunks}`)
     onChunk(floatTo16BitPCM(input))
   }
 

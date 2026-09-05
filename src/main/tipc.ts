@@ -473,6 +473,9 @@ export const router = {
     .input<{ transcript: string; duration: number }>()
     .action(async ({ input }) => {
       fs.mkdirSync(recordingsFolder, { recursive: true })
+      console.log(
+        `[GEMINI-LIVE] saveLiveTranscription len=${input.transcript?.length || 0} duration=${input.duration}`,
+      )
 
       const transcript = input.transcript?.trim()
       if (!transcript) {
@@ -484,6 +487,14 @@ export const router = {
       // Live transcripts (e.g. Gemini Live) arrive as final text — skip STT
       // and run the shared cleanup/history/paste flow (no audio file).
       await finalizeTranscription(transcript, input.duration)
+    }),
+
+  // Fire-and-forget diagnostic sink for the renderer's live session.
+  // Visible in dev logs / packaged main log as [GEMINI-LIVE-R].
+  geminiLiveLog: t.procedure
+    .input<{ message: string }>()
+    .action(async ({ input }) => {
+      console.log(`[GEMINI-LIVE-R] ${input.message}`)
     }),
 
   clearHistory: t.procedure

@@ -79,6 +79,11 @@ export function Component() {
 
   const isBusy = transcribeMutation.isPending || liveTranscribeMutation.isPending
 
+  // Fire-and-forget: renderer live diagnostics → main log ([GEMINI-LIVE-R]).
+  const liveLog = (message: string) => {
+    tipcClient.geminiLiveLog({ message }).catch(() => {})
+  }
+
   const recorderRef = useRef<Recorder | null>(null)
 
   // --- Gemini Live path (AI Studio key, true streaming) -------------------
@@ -135,6 +140,7 @@ export function Component() {
         liveErrorRef.current = message
         setLiveStatus(message.slice(0, 120))
       },
+      onLog: (m) => liveLog(m),
     })
 
     try {
@@ -155,24 +161,28 @@ export function Component() {
     let stopMic: () => void
     try {
       const startTime = Date.now()
-      stopMic = await startMicPcmStream((pcm16) => {
-        // Feed audio to Gemini + a cheap level meter for the visualizer.
-        transcriber.sendPcm16Chunk(pcm16)
-        const view = new Int16Array(pcm16)
-        let peak = 0
-        for (let i = 0; i < view.length; i += 8) {
-          const a = Math.abs(view[i])
-          if (a > peak) peak = a
-        }
-        const rms = Math.min(1, Math.max(0.01, peak / 12000))
-        setVisualizerData((prev) => {
-          const data = [...prev, rms]
-          if (data.length > VISUALIZER_BUFFER_LENGTH) data.shift()
-          return data
-        })
-      })
+      stopMic = await startMicPcmStream(
+        (pcm16) => {
+          // Feed audio to Gemini + a cheap level meter for the visualizer.
+          transcriber.sendPcm16Chunk(pcm16)
+          const view = new Int16Array(pcm16)
+          let peak = 0
+          for (let i = 0; i < view.length; i += 8) {
+            const a = Math.abs(view[i])
+            if (a > peak) peak = a
+          }
+          const rms = Math.min(1, Math.max(0.01, peak / 12000))
+          setVisualizerData((prev) => {
+            const data = [...prev, rms]
+            if (data.length > VISUALIZER_BUFFER_LENGTH) data.shift()
+            return data
+          })
+        },
+        { onLog: (m) => liveLog(m) },
+      )
       liveRef.current = { transcriber, stopMic, startTime }
       setLiveStatus("Listening…")
+      liveLog("panel: live session streaming")
     } catch (error) {
       transcriber.close()
       fail(error)
@@ -184,6 +194,7 @@ export function Component() {
     liveRef.current = null
     if (!live) return
     const duration = Date.now() - live.startTime
+    liveLog(`panel: finish duration=${duration}`)
     setRecording(false)
     setVisualizerData(() => getInitialVisualizerData())
     tipcClient.recordEvent({ type: "end" })
@@ -227,6 +238,7 @@ export function Component() {
     }
     setLiveInterim("")
     setLiveStatus("")
+    liveLog(`panel: saving live transcript len=${transcript.length}`)
     liveTranscribeMutation.mutate({ transcript, duration })
   }
 
@@ -234,6 +246,7 @@ export function Component() {
     const live = liveRef.current
     liveRef.current = null
     if (!live) return
+    liveLog("panel: cancel")
     live.stopMic()
     live.transcriber.close()
     setRecording(false)
@@ -251,7 +264,9 @@ export function Component() {
     try {
       setVisualizerData(() => getInitialVisualizerData())
       const config = await tipcClient.getConfig()
-      if ((config.sttProviderId || "groq") === "gemini-live") {
+      const provider = config.sttProviderId || "groq"
+      liveLog(`panel: start provider=${provider}`)
+      if (provider === "gemini-live") {
         await startLiveRecording()
         return
       }
