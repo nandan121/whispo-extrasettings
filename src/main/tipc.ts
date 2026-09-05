@@ -25,7 +25,7 @@ import { MainGeminiLiveSession } from "./gemini-live"
 import { state } from "./state"
 import { updateTrayIcon } from "./tray"
 import { isAccessibilityGranted } from "./utils"
-import { writeText } from "./keyboard"
+import { deleteText, writeText } from "./keyboard"
 
 const t = tipc.create()
 
@@ -60,6 +60,10 @@ async function finalizeTranscription(
   audio?: ArrayBuffer,
 ) {
   const config = configStore.get()
+  // Freeze live typing: interim ops stop here; the cursor already holds the
+  // raw transcript when this session live-typed.
+  const liveTypingThisSession = liveTypingActive
+  liveTypingActive = false
   let finalText = rawTranscript
   let finalTextForHistory = "STT:" + rawTranscript
 
@@ -185,7 +189,11 @@ async function finalizeTranscription(
   if (!state.isCommandMode) {
     //  paste
     clipboard.writeText(finalText)
-    if (isAccessibilityGranted()) {
+    if (liveTypingThisSession) {
+      // Cursor already holds the raw transcript from live typing:
+      // reconcile it to the final (possibly post-processed) text.
+      await reconcileLiveType(finalText)
+    } else if (isAccessibilityGranted()) {
       await writeText(finalText)
     }
   }
@@ -203,6 +211,74 @@ const sendLiveUpdateToPanel = (update: {
     getRendererHandlers<RendererHandlers>(
       panel.webContents,
     ).geminiLiveUpdate.send(update)
+  }
+}
+
+// --- Live typing: type interim words at the cursor while speaking ---------
+// Only the trailing (unstable) words are held back; once the model settles
+// earlier words they are typed immediately. Revisions are applied as
+// backspace + retype via the Rust helper, and the release path reconciles
+// the cursor to the final text (see finalizeTranscription).
+const LIVE_TYPE_HOLD_WORDS = 2
+
+let liveTypedText = ""
+let liveTypingActive = false
+let liveTypeTarget = ""
+let liveTypeChain: Promise<void> = Promise.resolve()
+
+const charCommonPrefix = (a: string, b: string): number => {
+  let i = 0
+  while (i < a.length && i < b.length && a[i] === b[i]) i++
+  return i
+}
+
+function stableLivePrefix(hypothesis: string): string {
+  const words = hypothesis.split(/\s+/).filter(Boolean)
+  if (words.length <= LIVE_TYPE_HOLD_WORDS) return ""
+  return words.slice(0, words.length - LIVE_TYPE_HOLD_WORDS).join(" ")
+}
+
+function requestLiveType(target: string) {
+  if (!liveTypingActive) return
+  liveTypeTarget = target
+  liveTypeChain = liveTypeChain.then(async () => {
+    const goal = liveTypeTarget
+    const current = liveTypedText
+    if (goal === current) return
+    const common = charCommonPrefix(current, goal)
+    const del = current.length - common
+    const ins = goal.slice(common)
+    try {
+      if (del > 0) await deleteText(del)
+      if (ins) await writeText(ins)
+      liveTypedText = goal
+    } catch (error) {
+      console.error(`[LIVETYPE] op failed, stopping live typing: ${error}`)
+      liveTypingActive = false
+    }
+  })
+}
+
+/** Reconcile cursor text to the final string (tail + any corrections). */
+async function reconcileLiveType(target: string) {
+  if (!liveTypingActive && liveTypedText === target) return
+  liveTypeTarget = target
+  await liveTypeChain
+  const current = liveTypedText
+  if (current === target) {
+    liveTypedText = target
+    return
+  }
+  const common = charCommonPrefix(current, target)
+  const del = current.length - common
+  const ins = target.slice(common)
+  console.log(`[LIVETYPE] reconcile del=${del} insLen=${ins.length}`)
+  try {
+    if (del > 0) await deleteText(del)
+    if (ins) await writeText(ins)
+    liveTypedText = target
+  } catch (error) {
+    console.error(`[LIVETYPE] reconcile failed: ${error}`)
   }
 }
 
@@ -528,9 +604,20 @@ export const router = {
       )
     }
     liveSession?.abort()
+    // Fresh cursor state for this dictation; live typing only for plain
+    // dictation (never cleanup/command mode) when the setting is on.
+    liveTypedText = ""
+    liveTypeTarget = ""
+    liveTypingActive =
+      config.liveTypingEnabled !== false &&
+      !state.isCleanupMode &&
+      !state.isCommandMode &&
+      !state.selectedText
     const session = (liveSession = new MainGeminiLiveSession({
-      onInterim: (text) =>
-        sendLiveUpdateToPanel({ kind: "interim", text }),
+      onInterim: (text) => {
+        sendLiveUpdateToPanel({ kind: "interim", text })
+        if (liveTypingActive) requestLiveType(stableLivePrefix(text))
+      },
       onError: (message) =>
         sendLiveUpdateToPanel({ kind: "error", text: message }),
     }))
@@ -562,6 +649,24 @@ export const router = {
   geminiLiveAbort: t.procedure.action(async () => {
     liveSession?.abort()
     liveSession = null
+    // Cancelled dictation leaves no trace, like the file path: remove any
+    // live-typed draft from the cursor.
+    if (liveTypingActive) {
+      liveTypingActive = false
+      const typed = liveTypedText
+      liveTypedText = ""
+      liveTypeTarget = ""
+      if (typed) {
+        try {
+          await deleteText(typed.length)
+        } catch (error) {
+          console.error(`[LIVETYPE] cancel cleanup failed: ${error}`)
+        }
+      }
+    } else {
+      liveTypedText = ""
+      liveTypeTarget = ""
+    }
   }),
 
   clearHistory: t.procedure

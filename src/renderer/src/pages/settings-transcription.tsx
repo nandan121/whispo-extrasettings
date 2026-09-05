@@ -107,6 +107,22 @@ export function Component() {
                     />
                 </Control>
             </ControlGroup>
+
+            <ControlGroup
+                title="Live Typing"
+                endDescription="Gemini Live only: type settled words at the cursor while you speak. Revisions are corrected automatically; the release pass reconciles the final text."
+            >
+                <Control label="Type While Speaking" className="px-3">
+                    <Switch
+                        checked={configQuery.data.liveTypingEnabled !== false}
+                        onCheckedChange={(checked) => {
+                            saveConfig({
+                                liveTypingEnabled: checked,
+                            })
+                        }}
+                    />
+                </Control>
+            </ControlGroup>
         </div>
     )
 }

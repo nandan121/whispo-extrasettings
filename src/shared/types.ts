@@ -54,6 +54,10 @@ export type Config = {
   transcriptionPrompt?: string
   transcriptionPromptEnabled?: boolean
 
+  // Gemini Live: type settled interim words at the cursor while speaking.
+  // Default on; cleanup/command sessions never live-type.
+  liveTypingEnabled?: boolean
+
   commandMappings?: CommandMapping[]
 }
 

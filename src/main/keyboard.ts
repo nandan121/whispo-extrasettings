@@ -53,6 +53,32 @@ export const writeText = (text: string) => {
     })
   })
 }
+export const deleteText = (count: number) => {
+  return new Promise<void>((resolve, reject) => {
+    if (!Number.isFinite(count) || count <= 0) {
+      resolve()
+      return
+    }
+
+    const child = spawn(rdevPath, ["delete", String(Math.floor(count))])
+
+    child.stderr.on("data", (data) => {
+      console.error(`[LIVETYPE] Rust stderr: ${data}`)
+    })
+
+    child.on("close", (code) => {
+      // injected keystrokes confuse the shortcut tracker; reset like writeText
+      keysPressed.clear()
+
+      if (code === 0) {
+        resolve()
+      } else {
+        reject(new Error(`child process exited with code ${code}`))
+      }
+    })
+  })
+}
+
 export const simulateCopy = () => {
   return new Promise<void>((resolve, reject) => {
     console.log("[CLEANUP] Calling Rust binary for copy simulation")

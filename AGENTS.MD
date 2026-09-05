@@ -145,6 +145,7 @@ pnpm release          # Run release script
 |---------|-------------|
 | `listen` | Global keyboard event listener via rdev |
 | `write` | Text typing simulation via enigo |
+| `delete` | Backspace-N-times via enigo (live-typing revisions/cancel) |
 | `copy` | Copy simulation for selection detection |
 
 ### IPC Channels (`@egoist/tipc`)

@@ -38,6 +38,10 @@ export class MainGeminiLiveSession {
   private currentInterim = ""
   private chunkCount = 0
   private msgCount = 0
+  /** Set when finish() signals end-of-stream; finals after this are complete. */
+  private endSignaledAt: number | null = null
+  private lastPostEndFinalAt = 0
+  private genCompleteAfterEnd = false
   lastError: string | null = null
 
   constructor(private callbacks: MainLiveCallbacks = {}) {}
@@ -77,6 +81,9 @@ export class MainGeminiLiveSession {
     this.currentInterim = ""
     this.chunkCount = 0
     this.msgCount = 0
+    this.endSignaledAt = null
+    this.lastPostEndFinalAt = 0
+    this.genCompleteAfterEnd = false
 
     // Never wedge the panel on a dead handshake: fail loudly instead.
     this.session = await Promise.race([
@@ -129,6 +136,7 @@ export class MainGeminiLiveSession {
               | {
                   interimInputTranscription?: { text?: string }
                   inputTranscription?: { text?: string }
+                  generationComplete?: boolean
                 }
               | undefined
             if (!serverContent) return
@@ -144,8 +152,16 @@ export class MainGeminiLiveSession {
               this.finals.push(serverContent.inputTranscription.text)
               this.currentInterim = ""
               const full = this.finals.join(" ").trim()
+              if (this.endSignaledAt) {
+                this.lastPostEndFinalAt = Date.now()
+                this.log(`post-end final len=${full.length}`)
+              }
               this.callbacks.onInterim?.(full)
               this.callbacks.onFinal?.(full)
+            }
+            if (serverContent.generationComplete && this.endSignaledAt) {
+              this.genCompleteAfterEnd = true
+              this.log("generationComplete after end-of-stream")
             }
           },
           onerror: (e) => {
@@ -236,17 +252,32 @@ export class MainGeminiLiveSession {
       throw new Error(this.lastError ?? "Live session did not open in time.")
     }
     try {
+      this.endSignaledAt = Date.now()
       session.sendRealtimeInput({ audioStreamEnd: true })
       this.log(
-        `finish: audioStreamEnd sent after ${this.chunkCount} chunks, waiting ${timeoutMs}ms`,
+        `finish: audioStreamEnd sent after ${this.chunkCount} chunks, waiting up to ${timeoutMs}ms`,
       )
     } catch {
       // ignore — session may already be closing
     }
+    // Adaptive wait: return soon after the server confirms completion
+    // (generationComplete, or a post-end final + 800ms grace) instead of
+    // always burning the full timeout. The timeout remains as a cap.
     const deadline = Date.now() + timeoutMs
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 150))
       if (this.closed) break
+      if (this.genCompleteAfterEnd) {
+        this.log("finish: early return on generationComplete")
+        break
+      }
+      if (
+        this.lastPostEndFinalAt &&
+        Date.now() - this.lastPostEndFinalAt > 800
+      ) {
+        this.log("finish: early return on settled post-end final")
+        break
+      }
     }
     try {
       session.close()
