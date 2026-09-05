@@ -32,6 +32,9 @@ export function Component() {
     stopMic: () => void
     startTime: number
   } | null>(null)
+  // Last live session failure detail (transcriber.lastError mirror for the
+  // empty-transcript branch: error → dialog, silence → quiet hide).
+  const liveErrorRef = useRef<string | null>(null)
 
   const transcribeMutation = useMutation({
     mutationFn: async ({
@@ -86,6 +89,7 @@ export function Component() {
     setRecording(true)
     setLiveInterim("")
     setLiveStatus("Connecting…")
+    liveErrorRef.current = null
     tipcClient.recordEvent({ type: "start" })
 
     const fail = (error: unknown) => {
@@ -128,6 +132,7 @@ export function Component() {
       onError: (message) => {
         // Mid-session streaming hiccup: show it, don't nuke the session.
         console.error("[GEMINI-LIVE]", message)
+        liveErrorRef.current = message
         setLiveStatus(message.slice(0, 120))
       },
     })
@@ -202,10 +207,21 @@ export function Component() {
     }
 
     if (transcript.trim().length === 0 || duration < 1000) {
-      // Same silence behavior as the file path: drop quietly, hide panel.
-      console.log("Live recording too short or empty, ignoring")
+      const sessionError =
+        liveErrorRef.current || live.transcriber.lastError
       setLiveInterim("")
       setLiveStatus("")
+      if (sessionError) {
+        // Errored session: say exactly what failed.
+        tipcClient.hidePanelWindow()
+        tipcClient.displayError({
+          title: "Gemini Live error",
+          message: sessionError,
+        })
+        return
+      }
+      // Healthy but silent session: drop quietly, like the file path.
+      console.log("Live recording too short or empty, ignoring")
       tipcClient.hidePanelWindow()
       return
     }
@@ -223,6 +239,7 @@ export function Component() {
     setRecording(false)
     setLiveInterim("")
     setLiveStatus("")
+    liveErrorRef.current = null
     setVisualizerData(() => getInitialVisualizerData())
     tipcClient.recordEvent({ type: "end" })
   }

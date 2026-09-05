@@ -24,6 +24,66 @@ export type GeminiLiveCallbacks = {
 
 type LiveSession = Awaited<ReturnType<GoogleGenAI["live"]["connect"]>>
 
+// ---------------------------------------------------------------------------
+// Error detail extraction. The SDK types `onerror` as (e: ErrorEvent) and
+// `onclose` as (e: CloseEvent) — neither is an `Error`, so a plain
+// `instanceof Error` check swallows the real reason. These helpers turn any
+// failure event into a human-readable message.
+// ---------------------------------------------------------------------------
+
+function safeStringify(value: unknown, maxLen = 300): string {
+  try {
+    const s =
+      typeof value === "string" ? value : JSON.stringify(value) ?? String(value)
+    return s.length > maxLen ? s.slice(0, maxLen) + "…" : s
+  } catch {
+    return String(value)
+  }
+}
+
+function isCloseLike(
+  value: unknown,
+): value is { code?: unknown; reason?: unknown; wasClean?: unknown } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    ("code" in value || "reason" in value || "wasClean" in value)
+  )
+}
+
+export function describeLiveError(event: unknown): string {
+  if (event instanceof Error) return event.message || event.name
+  if (typeof event === "string") return event
+  if (typeof event === "object" && event !== null) {
+    // DOM ErrorEvent from the WebSocket layer.
+    if ("message" in event && typeof event.message === "string" && event.message) {
+      return event.message
+    }
+    if (isCloseLike(event)) return describeLiveClose(event)
+  }
+  const s = safeStringify(event)
+  return s && s !== "{}" ? s : "Unknown live session error"
+}
+
+export function describeLiveClose(event: unknown): string {
+  if (isCloseLike(event)) {
+    const code =
+      typeof event.code === "number" ? event.code : "unknown code"
+    const reason =
+      typeof event.reason === "string" && event.reason
+        ? event.reason
+        : "no reason given"
+    const hint =
+      code === 1006
+        ? " (abnormal closure — network, proxy, or firewall interrupted the WebSocket)"
+        : code === 1008
+          ? " (server rejected the session — model, key entitlement, or parameters)"
+          : ""
+    return `Live session closed (code=${code}): ${reason}${hint}`
+  }
+  return `Live session closed: ${safeStringify(event)}`
+}
+
 export function floatTo16BitPCM(float32: Float32Array): ArrayBuffer {
   const buffer = new ArrayBuffer(float32.length * 2)
   const view = new DataView(buffer)
@@ -49,8 +109,12 @@ export class GeminiLiveTranscriber {
   private session: LiveSession | null = null
   private opened = false
   private closed = false
+  /** Set during intentional finish()/close() so teardown events are ignored. */
+  private intentionalClose = false
   private finals: string[] = []
   private currentInterim = ""
+  /** Last session-level failure detail (for dialogs after finish()). */
+  lastError: string | null = null
 
   constructor(private callbacks: GeminiLiveCallbacks = {}) {}
 
@@ -72,6 +136,8 @@ export class GeminiLiveTranscriber {
     this.ai = new GoogleGenAI({ apiKey: opts.apiKey })
     this.closed = false
     this.opened = false
+    this.intentionalClose = false
+    this.lastError = null
     this.finals = []
     this.currentInterim = ""
 
@@ -116,11 +182,21 @@ export class GeminiLiveTranscriber {
           }
         },
         onerror: (e) => {
-          const message =
-            e instanceof Error ? e.message : "Gemini Live session error"
+          // Teardown of our own making (finish/close) is not a failure.
+          if (this.intentionalClose) return
+          const message = describeLiveError(e)
+          this.lastError = message
           this.callbacks.onError?.(message)
         },
-        onclose: () => {
+        onclose: (e) => {
+          if (this.intentionalClose || this.finalTranscript) {
+            this.callbacks.onClose?.()
+            return
+          }
+          // Server rejections arrive as closes, not errors — surface them.
+          const message = describeLiveClose(e)
+          this.lastError = message
+          this.callbacks.onError?.(message)
           this.callbacks.onClose?.()
         },
       },
@@ -148,8 +224,31 @@ export class GeminiLiveTranscriber {
   async finish(timeoutMs = 6000): Promise<string> {
     const session = this.session
     this.session = null
+    this.intentionalClose = true
+    if (!session) {
+      throw new Error(
+        this.lastError ?? "Live session was never established.",
+      )
+    }
+    // Never signal end-of-stream on a half-open socket (quick-tap race):
+    // wait briefly for the session to open first.
+    const openDeadline = Date.now() + 3000
+    while (!this.opened && !this.closed && Date.now() < openDeadline) {
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    if (!this.opened) {
+      try {
+        session.close()
+      } catch {
+        // ignore
+      }
+      this.closed = true
+      throw new Error(
+        this.lastError ?? "Live session did not open in time.",
+      )
+    }
     try {
-      session?.sendRealtimeInput({ audioStreamEnd: true })
+      session.sendRealtimeInput({ audioStreamEnd: true })
     } catch {
       // ignore — session may already be closing
     }
@@ -170,6 +269,7 @@ export class GeminiLiveTranscriber {
   }
 
   close(): void {
+    this.intentionalClose = true
     this.closed = true
     try {
       this.session?.close()
@@ -213,12 +313,19 @@ export async function startMicPcmStream(
   }
 
   source.connect(processor)
-  processor.connect(audioContext.destination)
+  // ScriptProcessorNode only pulls audio while connected downstream — sink it
+  // through zero gain so the mic is captured but NOT played back out of the
+  // speakers (which would cause a feedback loop).
+  const sink = audioContext.createGain()
+  sink.gain.value = 0
+  processor.connect(sink)
+  sink.connect(audioContext.destination)
 
   return () => {
     try {
       source.disconnect()
       processor.disconnect()
+      sink.disconnect()
     } catch {
       // ignore
     }
