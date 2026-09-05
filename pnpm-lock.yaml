@@ -11,6 +11,9 @@ importers:
       '@egoist/electron-panel-window':
         specifier: ^8.0.3
         version: 8.0.3
+      '@google/genai':
+        specifier: ^2.21.0
+        version: 2.21.0
     devDependencies:
       '@egoist/tailwindcss-icons':
         specifier: ^1.8.1
@@ -27,9 +30,6 @@ importers:
       '@electron-toolkit/utils':
         specifier: ^3.0.0
         version: 3.0.0(electron@31.7.0)
-      '@google/genai':
-        specifier: ^2.21.0
-        version: 2.21.0
       '@google/generative-ai':
         specifier: ^0.21.0
         version: 0.21.0
