@@ -1,4 +1,9 @@
 import { configStore } from "./config"
+import {
+  buildGeminiFilePrompt,
+  mapLanguageToCodes,
+  parseCustomVocabulary,
+} from "../shared/gemini-transcription"
 
 // ---------------------------------------------------------------------------
 // Gemini Transcription via the Gemini Developer API (AI Studio key).
@@ -23,45 +28,8 @@ const GEMINI_API_BASE_DEFAULT =
   "https://generativelanguage.googleapis.com/v1beta"
 
 // Whispo stores ISO-639-1 ("de") or "auto"; Gemini wants BCP-47 ("de-DE").
-// Unknown 2-letter codes fall back to "<lang>-<LANG>" which Gemini still
-// accepts as a hint; "auto" (or empty) means omit for auto-detection.
-const REGION_FALLBACK: Record<string, string> = {
-  en: "en-US",
-  de: "de-DE",
-  fr: "fr-FR",
-  es: "es-ES",
-  it: "it-IT",
-  pt: "pt-BR",
-  nl: "nl-NL",
-  pl: "pl-PL",
-  uk: "uk-UA",
-  ru: "ru-RU",
-  tr: "tr-TR",
-  hi: "hi-IN",
-  ja: "ja-JP",
-  ko: "ko-KR",
-  zh: "zh-CN",
-}
-
-export function mapLanguageToCodes(language?: string): string[] | undefined {
-  if (!language || language === "auto") return undefined
-  if (language.includes("-")) return [language]
-  return [REGION_FALLBACK[language] || language]
-}
-
-// "ChatGPT, OpenAI\nGroq" -> ["ChatGPT", "OpenAI", "Groq"] (max 100, best ≤100)
-export function parseCustomVocabulary(prompt?: string): string[] | undefined {
-  if (!prompt) return undefined
-  const terms = Array.from(
-    new Set(
-      prompt
-        .split(/[,;\n]/)
-        .map((t) => t.trim())
-        .filter(Boolean),
-    ),
-  ).slice(0, 100)
-  return terms.length > 0 ? terms : undefined
-}
+// Language/vocabulary mapping lives in src/shared/gemini-transcription.ts
+// (pure + unit-tested); see mapLanguageToCodes / parseCustomVocabulary there.
 
 // MediaRecorder gives "audio/webm;codecs=opus". Gemini must see audio/webm —
 // video/webm yields an empty transcript (no error), see:
@@ -118,21 +86,19 @@ export async function transcribeAudioWithGeminiFile(
 
   // Language/vocabulary hints go into the prompt: the Developer API serves
   // the GA model as audio understanding via generateContent (the structured
-  // audioTranscriptionConfig is a Vertex-only field).
+  // audioTranscriptionConfig is a Vertex-only field). SMART mode (server-side
+  // light cleanup) is mirrored in prompt form — see buildGeminiFilePrompt.
   const languageCodes = mapLanguageToCodes(config.transcriptionLanguage)
   const customVocabulary =
     config.transcriptionPromptEnabled !== false
       ? parseCustomVocabulary(config.transcriptionPrompt)
       : undefined
 
-  let prompt =
-    "Transcribe this audio verbatim. Output only the transcription text, no commentary, no formatting."
-  if (languageCodes) {
-    prompt += ` Spoken language: ${languageCodes.join(", ")}.`
-  }
-  if (customVocabulary) {
-    prompt += ` Key terms (use these exact spellings when heard): ${customVocabulary.join(", ")}.`
-  }
+  const prompt = buildGeminiFilePrompt({
+    languageCodes,
+    customVocabulary,
+    smart: config.geminiSmartTranscription === true,
+  })
 
   const body = {
     contents: [

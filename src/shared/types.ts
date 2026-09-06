@@ -58,6 +58,12 @@ export type Config = {
   // Default on; cleanup/command sessions never live-type.
   liveTypingEnabled?: boolean
 
+  // Gemini file + live: server-side SMART transcription (disfluency removal,
+  // light grammar cleanup, formatting) instead of strict verbatim output.
+  // Default off (VERBATIM). Overlaps with transcript post-processing — the
+  // settings UI recommends turning that off while this is on.
+  geminiSmartTranscription?: boolean
+
   commandMappings?: CommandMapping[]
 }
 

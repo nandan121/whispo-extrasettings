@@ -17,10 +17,12 @@ import { postProcessTranscript, processTextCleanup } from "./llm"
 import {
   GEMINI_FILE_MODEL_DEFAULT,
   GEMINI_LIVE_MODEL_DEFAULT,
-  mapLanguageToCodes,
-  parseCustomVocabulary,
   transcribeAudioWithGeminiFile,
 } from "./gemini"
+import {
+  mapLanguageToCodes,
+  parseCustomVocabulary,
+} from "../shared/gemini-transcription"
 import { MainGeminiLiveSession } from "./gemini-live"
 import { state } from "./state"
 import { updateTrayIcon } from "./tray"
@@ -664,6 +666,10 @@ export const router = {
         config.transcriptionPromptEnabled !== false
           ? parseCustomVocabulary(config.transcriptionPrompt)
           : undefined,
+      // Server-side light cleanup (disfluency removal, grammar, formatting).
+      // Overlaps with the LLM post-processing step — the settings UI advises
+      // turning that off while SMART is on to avoid double cleanup + latency.
+      smartTranscription: config.geminiSmartTranscription === true,
     })
   }),
 

@@ -3,6 +3,7 @@ import {
   describeLiveClose,
   describeLiveError,
 } from "../shared/gemini-live-errors"
+import { buildLiveTranscriptionConfig } from "../shared/gemini-transcription"
 import { GEMINI_LIVE_MODEL_DEFAULT } from "./gemini"
 
 // ---------------------------------------------------------------------------
@@ -66,13 +67,14 @@ export class MainGeminiLiveSession {
     model?: string
     languageCodes?: string[]
     customVocabulary?: string[]
+    smartTranscription?: boolean
   }): Promise<void> {
     if (!opts.apiKey) {
       throw new Error("Gemini API key is required.")
     }
     const model = opts.model || GEMINI_LIVE_MODEL_DEFAULT
     this.log(
-      `connect model=${model} lang=${opts.languageCodes?.join(",") || "auto"} vocab=${opts.customVocabulary?.length || 0}`,
+      `connect model=${model} lang=${opts.languageCodes?.join(",") || "auto"} vocab=${opts.customVocabulary?.length || 0} smart=${opts.smartTranscription === true}`,
     )
     this.ai = new GoogleGenAI({ apiKey: opts.apiKey })
     this.closed = false
@@ -94,14 +96,11 @@ export class MainGeminiLiveSession {
         model,
         config: {
           responseModalities: [Modality.TEXT],
-          inputAudioTranscription: {
-            ...(opts.languageCodes
-              ? { languageCodes: opts.languageCodes }
-              : {}),
-            ...(opts.customVocabulary
-              ? { customVocabulary: opts.customVocabulary }
-              : {}),
-          },
+          inputAudioTranscription: buildLiveTranscriptionConfig({
+            languageCodes: opts.languageCodes,
+            customVocabulary: opts.customVocabulary,
+            smart: opts.smartTranscription,
+          }),
         },
         callbacks: {
           onopen: () => {

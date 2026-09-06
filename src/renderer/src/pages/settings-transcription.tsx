@@ -123,6 +123,22 @@ export function Component() {
                     />
                 </Control>
             </ControlGroup>
+
+            <ControlGroup
+                title="Smart Transcription"
+                endDescription='Gemini file + Live only: server-side light cleanup (removes "um"/repetitions/false starts, fixes grammar, formats lists) instead of strict verbatim output. If this is on, consider turning off transcript post-processing in Settings → General to avoid double cleanup and extra delay.'
+            >
+                <Control label="Smart Transcription (Gemini)" className="px-3">
+                    <Switch
+                        checked={configQuery.data.geminiSmartTranscription === true}
+                        onCheckedChange={(checked) => {
+                            saveConfig({
+                                geminiSmartTranscription: checked,
+                            })
+                        }}
+                    />
+                </Control>
+            </ControlGroup>
         </div>
     )
 }
