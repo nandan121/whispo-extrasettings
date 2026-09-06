@@ -79,7 +79,10 @@ type GeminiPart = {
 }
 
 type GeminiGenerateContentResponse = {
-  candidates?: Array<{ content?: { parts?: GeminiPart[] } }>
+  candidates?: Array<{
+    content?: { parts?: GeminiPart[] }
+    finishReason?: string
+  }>
   promptFeedback?: { blockReason?: string }
 }
 
@@ -177,8 +180,11 @@ export async function transcribeAudioWithGeminiFile(
 
   const text = extractTranscriptText(json)
   if (!text) {
+    const finishReason = json.candidates?.[0]?.finishReason
     throw new Error(
-      "Gemini returned an empty transcript (silence, unsupported audio, or model preview issue).",
+      finishReason
+        ? `Gemini returned an empty transcript (finishReason=${finishReason}; silence, safety filter, recitation block, or model preview issue).`
+        : "Gemini returned an empty transcript (silence, unsupported audio, or model preview issue).",
     )
   }
   return text

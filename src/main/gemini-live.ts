@@ -42,6 +42,8 @@ export class MainGeminiLiveSession {
   private endSignaledAt: number | null = null
   private lastPostEndFinalAt = 0
   private genCompleteAfterEnd = false
+  /** Last time any interim/final transcript arrived (pre- or post-end). */
+  private lastActivityAt = 0
   lastError: string | null = null
 
   constructor(private callbacks: MainLiveCallbacks = {}) {}
@@ -84,6 +86,7 @@ export class MainGeminiLiveSession {
     this.endSignaledAt = null
     this.lastPostEndFinalAt = 0
     this.genCompleteAfterEnd = false
+    this.lastActivityAt = 0
 
     // Never wedge the panel on a dead handshake: fail loudly instead.
     this.session = await Promise.race([
@@ -137,6 +140,7 @@ export class MainGeminiLiveSession {
                   interimInputTranscription?: { text?: string }
                   inputTranscription?: { text?: string }
                   generationComplete?: boolean
+                  turnComplete?: boolean
                 }
               | undefined
             if (!serverContent) return
@@ -144,6 +148,7 @@ export class MainGeminiLiveSession {
             if (serverContent.interimInputTranscription?.text) {
               this.currentInterim =
                 serverContent.interimInputTranscription.text
+              this.lastActivityAt = Date.now()
               this.callbacks.onInterim?.(
                 [...this.finals, this.currentInterim].join(" ").trim(),
               )
@@ -151,6 +156,7 @@ export class MainGeminiLiveSession {
             if (serverContent.inputTranscription?.text) {
               this.finals.push(serverContent.inputTranscription.text)
               this.currentInterim = ""
+              this.lastActivityAt = Date.now()
               const full = this.finals.join(" ").trim()
               if (this.endSignaledAt) {
                 this.lastPostEndFinalAt = Date.now()
@@ -159,9 +165,16 @@ export class MainGeminiLiveSession {
               this.callbacks.onInterim?.(full)
               this.callbacks.onFinal?.(full)
             }
-            if (serverContent.generationComplete && this.endSignaledAt) {
+            // STT sessions (responseModalities TEXT + inputAudioTranscription)
+            // signal turn boundaries via turnComplete; generationComplete only
+            // fires for assistant model turns, so accept either.
+            if (
+              (serverContent.generationComplete ||
+                serverContent.turnComplete) &&
+              this.endSignaledAt
+            ) {
               this.genCompleteAfterEnd = true
-              this.log("generationComplete after end-of-stream")
+              this.log("turn/generation complete after end-of-stream")
             }
           },
           onerror: (e) => {
@@ -175,6 +188,9 @@ export class MainGeminiLiveSession {
             this.callbacks.onError?.(message)
           },
           onclose: (e) => {
+            // The socket is dead from here on: stop sending immediately so
+            // sendPcm16Base64() can't throw on a dead session.
+            this.closed = true
             const rec = e as { code?: unknown; reason?: unknown } | undefined
             this.log(
               `onclose: code=${rec && typeof rec === "object" && "code" in rec ? String(rec.code) : "?"} intentional=${this.intentionalClose}`,
@@ -208,7 +224,7 @@ export class MainGeminiLiveSession {
     })
   }
 
-  async finish(timeoutMs = 6000): Promise<string> {
+  async finish(timeoutMs = 2500): Promise<string> {
     return Promise.race([
       this.finishInner(timeoutMs),
       (async () => {
@@ -261,21 +277,35 @@ export class MainGeminiLiveSession {
       // ignore — session may already be closing
     }
     // Adaptive wait: return soon after the server confirms completion
-    // (generationComplete, or a post-end final + 800ms grace) instead of
-    // always burning the full timeout. The timeout remains as a cap.
+    // (turn/generation complete, a settled post-end final, or a quiet
+    // transcript with no pending interim) instead of always burning the full
+    // timeout. The timeout remains as a cap for trailing audio that is still
+    // being transcribed. Thresholds are deliberately conservative (400-600ms,
+    // not ~300ms): exiting too eagerly truncates trailing words that have
+    // not yet arrived as interim/final chunks.
     const deadline = Date.now() + timeoutMs
     while (Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 150))
+      await new Promise((r) => setTimeout(r, 80))
       if (this.closed) break
       if (this.genCompleteAfterEnd) {
-        this.log("finish: early return on generationComplete")
+        this.log("finish: early return on turn/generation complete")
         break
       }
-      if (
-        this.lastPostEndFinalAt &&
-        Date.now() - this.lastPostEndFinalAt > 800
-      ) {
+      const now = Date.now()
+      if (this.lastPostEndFinalAt && now - this.lastPostEndFinalAt > 400) {
         this.log("finish: early return on settled post-end final")
+        break
+      }
+      const timeSinceEnd = now - (this.endSignaledAt ?? now)
+      // Transcript already settled before release (or paused before release):
+      // finals exist, no interim pending, and the server has been quiet.
+      if (
+        timeSinceEnd > 600 &&
+        !this.currentInterim &&
+        this.finals.length > 0 &&
+        now - this.lastActivityAt > 500
+      ) {
+        this.log("finish: early return on settled transcript")
         break
       }
     }

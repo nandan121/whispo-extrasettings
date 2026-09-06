@@ -227,10 +227,39 @@ let liveTypeTarget = ""
 let liveTypeChain: Promise<void> = Promise.resolve()
 
 const charCommonPrefix = (a: string, b: string): number => {
+  // Grapheme-aware prefix: Backspace deletes one visible character, not one
+  // UTF-16 code unit (e.g. "🎉".length === 2 in JS but is a single Backspace).
+  const ac = splitGraphemes(a)
+  const bc = splitGraphemes(b)
   let i = 0
-  while (i < a.length && i < b.length && a[i] === b[i]) i++
+  while (i < ac.length && i < bc.length && ac[i] === bc[i]) i++
   return i
 }
+
+// Split into user-perceived characters for Backspace counting.
+// Intl.Segmenter (grapheme) handles ZWJ sequences/flags; Array.from (code
+// points) is the fallback for lone surrogates/combining marks.
+function splitGraphemes(s: string): string[] {
+  try {
+    const Segmenter = (Intl as unknown as {
+      Segmenter?: new (
+        locales?: string | string[],
+        options?: { granularity?: string },
+      ) => { segment(input: string): Iterable<{ segment: string }> }
+    }).Segmenter
+    if (typeof Segmenter === "function") {
+      return Array.from(
+        new Segmenter(undefined, { granularity: "grapheme" }).segment(s),
+        (part) => part.segment,
+      )
+    }
+  } catch {
+    // fall through to code-point split
+  }
+  return Array.from(s)
+}
+
+const graphemeLength = (s: string): number => splitGraphemes(s).length
 
 function stableLivePrefix(hypothesis: string): string {
   const words = hypothesis.split(/\s+/).filter(Boolean)
@@ -246,8 +275,8 @@ function requestLiveType(target: string) {
     const current = liveTypedText
     if (goal === current) return
     const common = charCommonPrefix(current, goal)
-    const del = current.length - common
-    const ins = goal.slice(common)
+    const del = graphemeLength(current) - common
+    const ins = splitGraphemes(goal).slice(common).join("")
     try {
       if (del > 0) await deleteText(del)
       if (ins) await writeText(ins)
@@ -270,8 +299,8 @@ async function reconcileLiveType(target: string) {
     return
   }
   const common = charCommonPrefix(current, target)
-  const del = current.length - common
-  const ins = target.slice(common)
+  const del = graphemeLength(current) - common
+  const ins = splitGraphemes(target).slice(common).join("")
   console.log(`[LIVETYPE] reconcile del=${del} insLen=${ins.length}`)
   try {
     if (del > 0) await deleteText(del)
@@ -610,6 +639,12 @@ export const router = {
     liveTypeTarget = ""
     liveTypingActive =
       config.liveTypingEnabled !== false &&
+      // Raw words are typed live; post-processing rewrites the whole sentence
+      // afterwards (backspace + retype). If the cursor moved meanwhile that
+      // would erase unrelated text — so fall back to type-on-finish instead.
+      !config.transcriptPostProcessingEnabled &&
+      // macOS without accessibility permission: the Rust helper can't type.
+      isAccessibilityGranted() &&
       !state.isCleanupMode &&
       !state.isCommandMode &&
       !state.selectedText
@@ -658,7 +693,7 @@ export const router = {
       liveTypeTarget = ""
       if (typed) {
         try {
-          await deleteText(typed.length)
+          await deleteText(graphemeLength(typed))
         } catch (error) {
           console.error(`[LIVETYPE] cancel cleanup failed: ${error}`)
         }

@@ -24,6 +24,10 @@ export function Component() {
   const [liveStatus, setLiveStatus] = useState("")
   const isConfirmedRef = useRef(false)
   const startingRef = useRef(false)
+  // Release ("finish"/"cancel") that landed while startRecordingAuto was still
+  // awaiting getConfig/connect: torn down as soon as init resolves so a quick
+  // tap can't leave the panel stuck in recording mode.
+  const pendingStopRef = useRef<"finish" | "cancel" | null>(null)
   const liveRef = useRef<{
     stopMic: () => void
     startTime: number
@@ -85,6 +89,9 @@ export function Component() {
   // --- Gemini Live path (AI Studio key, true streaming) -------------------
   // The recording indicator (tray + visualizer + status) is set BEFORE
   // connecting so a slow/failed connection never looks like "nothing".
+  // Mic capture starts IN PARALLEL with the WebSocket handshake: awaiting the
+  // handshake first would clip the first ~0.5-1s of speech. Chunks captured
+  // while connecting are buffered and flushed in order once connected.
   const startLiveRecording = async () => {
     // Instant indicator: tray + red bars + status line.
     setRecording(true)
@@ -96,6 +103,7 @@ export function Component() {
     const fail = (error: unknown) => {
       console.error("[GEMINI-LIVE]", error)
       liveRef.current = null
+      pendingStopRef.current = null
       setRecording(false)
       setLiveStatus("")
       setVisualizerData(() => getInitialVisualizerData())
@@ -108,6 +116,36 @@ export function Component() {
       })
     }
 
+    const micStartTime = Date.now()
+    const pendingChunks: ArrayBuffer[] = []
+    let sessionReady = false
+    const pushChunk = (pcm16: ArrayBuffer) => {
+      // Level meter stays live even while the handshake is in flight.
+      const view = new Int16Array(pcm16)
+      let peak = 0
+      for (let i = 0; i < view.length; i += 8) {
+        const a = Math.abs(view[i])
+        if (a > peak) peak = a
+      }
+      const rms = Math.min(1, Math.max(0.01, peak / 12000))
+      setVisualizerData((prev) => {
+        const data = [...prev, rms]
+        if (data.length > VISUALIZER_BUFFER_LENGTH) data.shift()
+        return data
+      })
+      if (!sessionReady) {
+        pendingChunks.push(pcm16)
+        return
+      }
+      // Stream audio to the main-process session.
+      tipcClient
+        .geminiLiveSendAudio({ chunk: arrayBufferToBase64(pcm16) })
+        .catch(() => {})
+    }
+    const micPromise = startMicPcmStream(pushChunk, {
+      onLog: (m) => liveLog(m),
+    })
+
     // The main process owns the API key and the Live WebSocket (Node
     // transport) and reads the config itself; interim text arrives via
     // the geminiLiveUpdate handler.
@@ -115,40 +153,62 @@ export function Component() {
       liveLog("panel: starting main live session")
       await tipcClient.geminiLiveStart()
     } catch (error) {
+      // Handshake failed: stop mic capture that may already be running.
+      micPromise.then(
+        (stop) => {
+          try {
+            stop()
+          } catch {
+            // ignore
+          }
+        },
+        () => {},
+      )
       fail(error)
       return
     }
 
     let stopMic: () => void
     try {
-      const startTime = Date.now()
-      stopMic = await startMicPcmStream(
-        (pcm16) => {
-          // Stream audio to the main-process session + level meter.
-          tipcClient
-            .geminiLiveSendAudio({ chunk: arrayBufferToBase64(pcm16) })
-            .catch(() => {})
-          const view = new Int16Array(pcm16)
-          let peak = 0
-          for (let i = 0; i < view.length; i += 8) {
-            const a = Math.abs(view[i])
-            if (a > peak) peak = a
-          }
-          const rms = Math.min(1, Math.max(0.01, peak / 12000))
-          setVisualizerData((prev) => {
-            const data = [...prev, rms]
-            if (data.length > VISUALIZER_BUFFER_LENGTH) data.shift()
-            return data
-          })
-        },
-        { onLog: (m) => liveLog(m) },
-      )
-      liveRef.current = { stopMic, startTime }
-      setLiveStatus("Listening…")
-      liveLog("panel: live session streaming")
+      stopMic = await micPromise
     } catch (error) {
       tipcClient.geminiLiveAbort().catch(() => {})
       fail(error)
+      return
+    }
+
+    // Flush audio captured during the handshake, in order. This block is
+    // synchronous so no live chunk can overtake the buffered ones.
+    const buffered = pendingChunks.splice(0)
+    sessionReady = true
+    for (const buf of buffered) {
+      tipcClient
+        .geminiLiveSendAudio({ chunk: arrayBufferToBase64(buf) })
+        .catch(() => {})
+    }
+    liveRef.current = { stopMic, startTime: micStartTime }
+    setLiveStatus("Listening…")
+    liveLog(
+      `panel: live session streaming (flushed ${buffered.length} buffered chunks)`,
+    )
+
+    // A release arrived while connecting: tear down immediately instead of
+    // getting stuck in recording mode.
+    const pending = pendingStopRef.current
+    pendingStopRef.current = null
+    if (pending === "finish") {
+      await finishLiveRecording().catch((error) => {
+        tipcClient.hidePanelWindow()
+        tipcClient.displayError({
+          title: error instanceof Error ? error.name : "Error",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Live transcription failed",
+        })
+      })
+    } else if (pending === "cancel") {
+      cancelLiveRecording()
     }
   }
 
@@ -234,6 +294,14 @@ export function Component() {
         return
       }
       recorderRef.current?.startRecording()
+      // A release arrived during getConfig: stop immediately so a quick tap
+      // can't leave the file-path recorder running with no stop event.
+      // isConfirmedRef was already set by the listener that parked this.
+      const pending = pendingStopRef.current
+      if (pending) {
+        pendingStopRef.current = null
+        recorderRef.current?.stopRecording()
+      }
     } catch (error) {
       tipcClient.hidePanelWindow()
       tipcClient.displayError({
@@ -332,6 +400,12 @@ export function Component() {
         })
         return
       }
+      // Release landed while connecting: park it so the session tears down
+      // as soon as initialization resolves (avoids stuck recording).
+      if (startingRef.current) {
+        pendingStopRef.current = "finish"
+        return
+      }
       recorderRef.current?.stopRecording()
     })
 
@@ -343,6 +417,11 @@ export function Component() {
       isConfirmedRef.current = false
       if (liveRef.current) {
         cancelLiveRecording()
+        return
+      }
+      // Cancel landed while connecting: park it like the finish path.
+      if (startingRef.current) {
+        pendingStopRef.current = "cancel"
         return
       }
       recorderRef.current?.stopRecording()
@@ -369,6 +448,10 @@ export function Component() {
           return
         }
         recorderRef.current?.stopRecording()
+      } else if (startingRef.current) {
+        // Toggle pressed while connecting: treat as a release.
+        isConfirmedRef.current = true
+        pendingStopRef.current = "finish"
       } else {
         tipcClient.showPanelWindow()
         startRecordingAuto()
