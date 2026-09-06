@@ -1,6 +1,6 @@
 # AGENTS.md - AI Agent Context Guide
 
-> **Version**: 0.2.5 | **License**: AGPL-3.0 | **Package Manager**: pnpm@9.12.1
+> **Version**: 0.2.6 | **License**: AGPL-3.0 | **Package Manager**: pnpm@9.12.1
 
 ## Project Identity
 
@@ -326,4 +326,4 @@ type Config = {
 - GitHub: https://github.com/nandan121/whispo-extrasettings
 - Homepage: https://whispo.app
 - License: AGPL-3.0
-- Version: 0.2.5
+- Version: 0.2.6
