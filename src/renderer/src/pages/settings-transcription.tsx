@@ -65,7 +65,7 @@ export function Component() {
 
             <ControlGroup
                 title="Custom Words"
-                endDescription='Example: "ChatGPT, OpenAI, Groq, Gemini"'
+                endDescription='Example: "ChatGPT, OpenAI, Groq, Gemini". Sent as prompt for Whisper providers, or as custom vocabulary for Gemini.'
             >
                 <div className="px-3 py-3 bg-amber-50 dark:bg-amber-950/20 border-l-4 border-amber-500 text-sm space-y-2">
                     <div className="flex gap-2">
@@ -102,6 +102,38 @@ export function Component() {
                         onBlur={(e) => {
                             saveConfig({
                                 transcriptionPrompt: e.currentTarget.value,
+                            })
+                        }}
+                    />
+                </Control>
+            </ControlGroup>
+
+            <ControlGroup
+                title="Live Typing"
+                endDescription="Gemini Live only: type settled words at the cursor while you speak. Revisions are corrected automatically; the release pass reconciles the final text."
+            >
+                <Control label="Type While Speaking" className="px-3">
+                    <Switch
+                        checked={configQuery.data.liveTypingEnabled !== false}
+                        onCheckedChange={(checked) => {
+                            saveConfig({
+                                liveTypingEnabled: checked,
+                            })
+                        }}
+                    />
+                </Control>
+            </ControlGroup>
+
+            <ControlGroup
+                title="Smart Transcription"
+                endDescription='Gemini file + Live only: server-side light cleanup (removes "um"/repetitions/false starts, fixes grammar, formats lists) instead of strict verbatim output. If this is on, consider turning off transcript post-processing in Settings → General to avoid double cleanup and extra delay.'
+            >
+                <Control label="Smart Transcription (Gemini)" className="px-3">
+                    <Switch
+                        checked={configQuery.data.geminiSmartTranscription === true}
+                        onCheckedChange={(checked) => {
+                            saveConfig({
+                                geminiSmartTranscription: checked,
                             })
                         }}
                     />

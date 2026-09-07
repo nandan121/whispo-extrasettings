@@ -14,10 +14,20 @@ import { configStore, recordingsFolder } from "./config"
 import { Config, RecordingHistoryItem } from "../shared/types"
 import { RendererHandlers } from "./renderer-handlers"
 import { postProcessTranscript, processTextCleanup } from "./llm"
+import {
+  GEMINI_FILE_MODEL_DEFAULT,
+  GEMINI_LIVE_MODEL_DEFAULT,
+  transcribeAudioWithGeminiFile,
+} from "./gemini"
+import {
+  mapLanguageToCodes,
+  parseCustomVocabulary,
+} from "../shared/gemini-transcription"
+import { MainGeminiLiveSession } from "./gemini-live"
 import { state } from "./state"
 import { updateTrayIcon } from "./tray"
 import { isAccessibilityGranted } from "./utils"
-import { writeText } from "./keyboard"
+import { deleteText, writeText } from "./keyboard"
 
 const t = tipc.create()
 
@@ -39,6 +49,268 @@ const saveRecordingsHistory = (history: RecordingHistoryItem[]) => {
     path.join(recordingsFolder, "history.json"),
     JSON.stringify(history),
   )
+}
+
+// ---------------------------------------------------------------------------
+// Shared finalization: cleanup/command/post-processing, history, paste.
+// `rawTranscript` is the verbatim STT text (any provider, file or live).
+// `audio` is optional — live sessions have no recording file to persist.
+// ---------------------------------------------------------------------------
+async function finalizeTranscription(
+  rawTranscript: string,
+  duration: number,
+  audio?: ArrayBuffer,
+) {
+  const config = configStore.get()
+  // Freeze live typing: interim ops stop here; the cursor already holds the
+  // raw transcript when this session live-typed.
+  const liveTypingThisSession = liveTypingActive
+  liveTypingActive = false
+  let finalText = rawTranscript
+  let finalTextForHistory = "STT:" + rawTranscript
+
+  // Handle cleanup mode vs normal dictation
+  if (state.isCleanupMode && state.selectedText) {
+    // Process cleanup: use transcript as command on selected text
+    finalText = await processTextCleanup(state.selectedText, rawTranscript)
+    finalTextForHistory +=
+      "\nSELECTED:" + state.selectedText + "\nCLEANED:" + finalText
+    console.log(
+      "[CLEANUP] LLM result:",
+      finalText.substring(0, 200) + (finalText.length > 200 ? "..." : ""),
+    )
+
+    // Reset cleanup state
+    state.isCleanupMode = false
+    state.selectedText = ""
+    state.isCleanupRecording = false
+  } else if (state.isCommandMode) {
+    console.log("[COMMAND] Command Mode - Transcript:", rawTranscript)
+    const commandText = rawTranscript.trim()
+    const mappings = config.commandMappings || []
+
+    // Sort mappings by prefix length (descending) to match longest prefix first
+    mappings.sort((a, b) => b.prefix.length - a.prefix.length)
+
+    let matchedMapping = mappings.find((m) =>
+      commandText.toLowerCase().startsWith(m.prefix.toLowerCase()),
+    )
+    let actionToExecute = ""
+
+    if (matchedMapping) {
+      console.log("[COMMAND] Matched prefix:", matchedMapping.prefix)
+      const commandArg = commandText.slice(matchedMapping.prefix.length).trim()
+      actionToExecute = matchedMapping.action.replace(
+        "{command}",
+        encodeURIComponent(commandArg),
+      )
+    } else {
+      // No prefix match - Fallback logic
+      if (
+        commandText.startsWith("http://") ||
+        commandText.startsWith("https://")
+      ) {
+        actionToExecute = commandText
+      } else {
+        const defaultMapping = mappings.find((m) => m.isDefault)
+        if (defaultMapping) {
+          console.log("[COMMAND] Using default mapping:", defaultMapping.name)
+          actionToExecute = defaultMapping.action.replace(
+            "{command}",
+            encodeURIComponent(commandText),
+          )
+        } else {
+          // System command fallback
+          actionToExecute = commandText
+        }
+      }
+    }
+
+    console.log("[COMMAND] Executing:", actionToExecute)
+
+    if (
+      actionToExecute.startsWith("http://") ||
+      actionToExecute.startsWith("https://")
+    ) {
+      shell.openExternal(actionToExecute)
+    } else {
+      // Execute as shell command
+      const { exec } = await import("child_process")
+      exec(actionToExecute, (error) => {
+        if (error) {
+          console.error(`[COMMAND] Execution error: ${error}`)
+        }
+      })
+    }
+
+    state.isCommandMode = false
+    state.isCleanupRecording = false
+
+    const panel = WINDOWS.get("panel")
+    if (panel) {
+      panel.hide()
+    }
+
+    finalTextForHistory += `\nNO SELECTION DETECTED\nCOMMAND EXECUTED: ${actionToExecute}`
+  } else if (config.transcriptPostProcessingEnabled) {
+    // Normal dictation: post-process transcript
+    finalText = await postProcessTranscript(rawTranscript)
+    finalTextForHistory += "\nPROCESSED:" + finalText
+  }
+
+  const history = getRecordingHistory()
+  const item: RecordingHistoryItem = {
+    id: Date.now().toString(),
+    createdAt: Date.now(),
+    duration,
+    transcript: finalTextForHistory,
+  }
+  history.push(item)
+  saveRecordingsHistory(history)
+
+  if (audio) {
+    fs.writeFileSync(
+      path.join(recordingsFolder, `${item.id}.webm`),
+      Buffer.from(audio),
+    )
+  }
+
+  const main = WINDOWS.get("main")
+  if (main) {
+    getRendererHandlers<RendererHandlers>(
+      main.webContents,
+    ).refreshRecordingHistory.send()
+  }
+
+  const panel = WINDOWS.get("panel")
+  if (panel) {
+    panel.hide()
+  }
+
+  // Don't paste or write text in command mode
+  if (!state.isCommandMode) {
+    //  paste
+    clipboard.writeText(finalText)
+    if (liveTypingThisSession) {
+      // Cursor already holds the raw transcript from live typing:
+      // reconcile it to the final (possibly post-processed) text.
+      await reconcileLiveType(finalText)
+    } else if (isAccessibilityGranted()) {
+      await writeText(finalText)
+    }
+  }
+}
+
+// Single active Gemini Live session (one panel / one mic).
+let liveSession: MainGeminiLiveSession | null = null
+
+const sendLiveUpdateToPanel = (update: {
+  kind: "interim" | "error"
+  text: string
+}) => {
+  const panel = WINDOWS.get("panel")
+  if (panel) {
+    getRendererHandlers<RendererHandlers>(
+      panel.webContents,
+    ).geminiLiveUpdate.send(update)
+  }
+}
+
+// --- Live typing: type interim words at the cursor while speaking ---------
+// Only the trailing (unstable) words are held back; once the model settles
+// earlier words they are typed immediately. Revisions are applied as
+// backspace + retype via the Rust helper, and the release path reconciles
+// the cursor to the final text (see finalizeTranscription).
+const LIVE_TYPE_HOLD_WORDS = 2
+
+let liveTypedText = ""
+let liveTypingActive = false
+let liveTypeTarget = ""
+let liveTypeChain: Promise<void> = Promise.resolve()
+
+const charCommonPrefix = (a: string, b: string): number => {
+  // Grapheme-aware prefix: Backspace deletes one visible character, not one
+  // UTF-16 code unit (e.g. "🎉".length === 2 in JS but is a single Backspace).
+  const ac = splitGraphemes(a)
+  const bc = splitGraphemes(b)
+  let i = 0
+  while (i < ac.length && i < bc.length && ac[i] === bc[i]) i++
+  return i
+}
+
+// Split into user-perceived characters for Backspace counting.
+// Intl.Segmenter (grapheme) handles ZWJ sequences/flags; Array.from (code
+// points) is the fallback for lone surrogates/combining marks.
+function splitGraphemes(s: string): string[] {
+  try {
+    const Segmenter = (Intl as unknown as {
+      Segmenter?: new (
+        locales?: string | string[],
+        options?: { granularity?: string },
+      ) => { segment(input: string): Iterable<{ segment: string }> }
+    }).Segmenter
+    if (typeof Segmenter === "function") {
+      return Array.from(
+        new Segmenter(undefined, { granularity: "grapheme" }).segment(s),
+        (part) => part.segment,
+      )
+    }
+  } catch {
+    // fall through to code-point split
+  }
+  return Array.from(s)
+}
+
+const graphemeLength = (s: string): number => splitGraphemes(s).length
+
+function stableLivePrefix(hypothesis: string): string {
+  const words = hypothesis.split(/\s+/).filter(Boolean)
+  if (words.length <= LIVE_TYPE_HOLD_WORDS) return ""
+  return words.slice(0, words.length - LIVE_TYPE_HOLD_WORDS).join(" ")
+}
+
+function requestLiveType(target: string) {
+  if (!liveTypingActive) return
+  liveTypeTarget = target
+  liveTypeChain = liveTypeChain.then(async () => {
+    const goal = liveTypeTarget
+    const current = liveTypedText
+    if (goal === current) return
+    const common = charCommonPrefix(current, goal)
+    const del = graphemeLength(current) - common
+    const ins = splitGraphemes(goal).slice(common).join("")
+    try {
+      if (del > 0) await deleteText(del)
+      if (ins) await writeText(ins)
+      liveTypedText = goal
+    } catch (error) {
+      console.error(`[LIVETYPE] op failed, stopping live typing: ${error}`)
+      liveTypingActive = false
+    }
+  })
+}
+
+/** Reconcile cursor text to the final string (tail + any corrections). */
+async function reconcileLiveType(target: string) {
+  if (!liveTypingActive && liveTypedText === target) return
+  liveTypeTarget = target
+  await liveTypeChain
+  const current = liveTypedText
+  if (current === target) {
+    liveTypedText = target
+    return
+  }
+  const common = charCommonPrefix(current, target)
+  const del = graphemeLength(current) - common
+  const ins = splitGraphemes(target).slice(common).join("")
+  console.log(`[LIVETYPE] reconcile del=${del} insLen=${ins.length}`)
+  try {
+    if (del > 0) await deleteText(del)
+    if (ins) await writeText(ins)
+    liveTypedText = target
+  } catch (error) {
+    console.error(`[LIVETYPE] reconcile failed: ${error}`)
+  }
 }
 
 export const router = {
@@ -192,6 +464,14 @@ export const router = {
           sttBaseUrl = config.custom2BaseUrl || ""
           sttModel = config.custom2SttModel || ""
           break
+        case "gemini":
+        case "gemini-live":
+          // Resolved in the Gemini branch below (Developer API + AI Studio
+          // key); placeholders keep the shared validation happy.
+          sttApiKey = ""
+          sttBaseUrl = ""
+          sttModel = config.geminiSttModel || GEMINI_FILE_MODEL_DEFAULT
+          break
         default:
           sttApiKey = config.groqApiKey || ""
           sttBaseUrl = config.groqBaseUrl || "https://api.groq.com/openai/v1"
@@ -203,6 +483,26 @@ export const router = {
           `The selected STT provider "${sttProviderId}" does not have an STT model configured. ` +
           `Please set an STT model in the Providers tab, or choose a different STT provider.`
         )
+      }
+
+      // Gemini (AI Studio key) uses the Developer API, not OpenAI-compat.
+      // "gemini-live" falls back to the file model here; true streaming
+      // happens in the panel via the Live API WebSocket.
+      if (sttProviderId === "gemini" || sttProviderId === "gemini-live") {
+        const rawTranscript = await transcribeAudioWithGeminiFile(
+          input.recording,
+          "audio/webm",
+        )
+        console.log(
+          "[GEMINI] File transcription:",
+          rawTranscript.slice(0, 200),
+        )
+        await finalizeTranscription(
+          rawTranscript,
+          input.duration,
+          input.recording,
+        )
+        return
       }
 
       const form = new FormData()
@@ -292,122 +592,123 @@ export const router = {
         }
       }
       
-      let finalText = json.text
-      let finalTextForHistory = "STT:"+json.text
+      await finalizeTranscription(json.text, input.duration, input.recording)
+    }),
 
-      // Handle cleanup mode vs normal dictation
-      if (state.isCleanupMode && state.selectedText) {
-        //console.log("[CLEANUP] Cleanup mode - Selected text:", state.selectedText.substring(0, 200) + (state.selectedText.length > 200 ? "..." : ""))
-        //console.log("[CLEANUP] Command:", json.text)
-
-        // Process cleanup: use transcript as command on selected text
-        finalText = await processTextCleanup(state.selectedText, json.text)
-        finalTextForHistory += "\nSELECTED:"+ state.selectedText+"\nCLEANED:"+finalText
-        console.log("[CLEANUP] LLM result:", finalText.substring(0, 200) + (finalText.length > 200 ? "..." : ""))
-
-        // Reset cleanup state
-        state.isCleanupMode = false
-        state.selectedText = ""
-        state.isCleanupRecording = false
-      } else if (state.isCommandMode) {
-        console.log("[COMMAND] Command Mode - Transcript:", json.text)
-        const commandText = json.text.trim()
-        const mappings = config.commandMappings || []
-        
-        // Sort mappings by prefix length (descending) to match longest prefix first
-        mappings.sort((a, b) => b.prefix.length - a.prefix.length)
-        
-        let matchedMapping = mappings.find(m => commandText.toLowerCase().startsWith(m.prefix.toLowerCase()))
-        let actionToExecute = ""
-        
-        if (matchedMapping) {
-            console.log("[COMMAND] Matched prefix:", matchedMapping.prefix)
-            const commandArg = commandText.slice(matchedMapping.prefix.length).trim()
-            actionToExecute = matchedMapping.action.replace("{command}", encodeURIComponent(commandArg))
-        } else {
-            // No prefix match - Fallback logic
-            if (commandText.startsWith("http://") || commandText.startsWith("https://")) {
-                actionToExecute = commandText
-            } else {
-                const defaultMapping = mappings.find(m => m.isDefault)
-                if (defaultMapping) {
-                    console.log("[COMMAND] Using default mapping:", defaultMapping.name)
-                    actionToExecute = defaultMapping.action.replace("{command}", encodeURIComponent(commandText))
-                } else {
-                    // System command fallback
-                    actionToExecute = commandText
-                }
-            }
-        }
-        
-        console.log("[COMMAND] Executing:", actionToExecute)
-        
-        if (actionToExecute.startsWith("http://") || actionToExecute.startsWith("https://")) {
-            shell.openExternal(actionToExecute)
-        } else {
-            // Execute as shell command
-            const { exec } = await import("child_process")
-            exec(actionToExecute, (error) => {
-                if (error) {
-                    console.error(`[COMMAND] Execution error: ${error}`)
-                }
-            })
-        }
-        
-        state.isCommandMode = false
-        state.isCleanupRecording = false
-        
-        const panel = WINDOWS.get("panel")
-        if (panel) {
-            panel.hide()
-        }
-
-
-        finalTextForHistory+=`\nNO SELECTION DETECTED\nCOMMAND EXECUTED: ${actionToExecute}`
-
-      } else if(config.transcriptPostProcessingEnabled) {
-        //console.log("[CLEANUP] Normal dictation mode")
-        // Normal dictation: post-process transcript
-        finalText = await postProcessTranscript(json.text)
-        finalTextForHistory += "\nPROCESSED:"+finalText
-      }
-
-      const history = getRecordingHistory()
-      const item: RecordingHistoryItem = {
-        id: Date.now().toString(),
-        createdAt: Date.now(),
-        duration: input.duration,
-        transcript: finalTextForHistory,
-      }
-      history.push(item)
-      saveRecordingsHistory(history)
-
-      fs.writeFileSync(
-        path.join(recordingsFolder, `${item.id}.webm`),
-        Buffer.from(input.recording),
+  saveLiveTranscription: t.procedure
+    .input<{ transcript: string; duration: number }>()
+    .action(async ({ input }) => {
+      fs.mkdirSync(recordingsFolder, { recursive: true })
+      console.log(
+        `[GEMINI-LIVE] saveLiveTranscription len=${input.transcript?.length || 0} duration=${input.duration}`,
       )
 
-      const main = WINDOWS.get("main")
-      if (main) {
-        getRendererHandlers<RendererHandlers>(
-          main.webContents,
-        ).refreshRecordingHistory.send()
+      const transcript = input.transcript?.trim()
+      if (!transcript) {
+        const panel = WINDOWS.get("panel")
+        panel?.hide()
+        return
       }
 
-      const panel = WINDOWS.get("panel")
-      if (panel) {
-        panel.hide()
-      }
+      // Live transcripts (e.g. Gemini Live) arrive as final text — skip STT
+      // and run the shared cleanup/history/paste flow (no audio file).
+      await finalizeTranscription(transcript, input.duration)
+    }),
 
-      // Don't paste or write text in command mode
-      if (!state.isCommandMode) {
-        //  paste
-        clipboard.writeText(finalText)
-        if (isAccessibilityGranted()) {
-          await writeText(finalText)
+  // Fire-and-forget diagnostic sink for the renderer's live session.
+  // Visible in dev logs / packaged main log as [GEMINI-LIVE-R].
+  geminiLiveLog: t.procedure
+    .input<{ message: string }>()
+    .action(async ({ input }) => {
+      console.log(`[GEMINI-LIVE-R] ${input.message}`)
+    }),
+
+  // --- Gemini Live (main-process Node WebSocket session) -------------------
+  // The renderer captures mic PCM and streams base64 chunks here; interim
+  // text flows back via the geminiLiveUpdate renderer handler.
+  geminiLiveStart: t.procedure.action(async () => {
+    const config = configStore.get()
+    const apiKey = config.geminiApiKey || ""
+    if (!apiKey) {
+      throw new Error(
+        'Gemini API key is required. Add your AI Studio key in Settings → Providers → Gemini ("Get API key" at aistudio.google.com).',
+      )
+    }
+    liveSession?.abort()
+    // Fresh cursor state for this dictation; live typing only for plain
+    // dictation (never cleanup/command mode) when the setting is on.
+    liveTypedText = ""
+    liveTypeTarget = ""
+    liveTypingActive =
+      config.liveTypingEnabled !== false &&
+      // Raw words are typed live; post-processing rewrites the whole sentence
+      // afterwards (backspace + retype). If the cursor moved meanwhile that
+      // would erase unrelated text — so fall back to type-on-finish instead.
+      !config.transcriptPostProcessingEnabled &&
+      // macOS without accessibility permission: the Rust helper can't type.
+      isAccessibilityGranted() &&
+      !state.isCleanupMode &&
+      !state.isCommandMode &&
+      !state.selectedText
+    const session = (liveSession = new MainGeminiLiveSession({
+      onInterim: (text) => {
+        sendLiveUpdateToPanel({ kind: "interim", text })
+        if (liveTypingActive) requestLiveType(stableLivePrefix(text))
+      },
+      onError: (message) =>
+        sendLiveUpdateToPanel({ kind: "error", text: message }),
+    }))
+    await session.connect({
+      apiKey,
+      model: config.geminiLiveSttModel || GEMINI_LIVE_MODEL_DEFAULT,
+      languageCodes: mapLanguageToCodes(config.transcriptionLanguage),
+      customVocabulary:
+        config.transcriptionPromptEnabled !== false
+          ? parseCustomVocabulary(config.transcriptionPrompt)
+          : undefined,
+      // Server-side light cleanup (disfluency removal, grammar, formatting).
+      // Overlaps with the LLM post-processing step — the settings UI advises
+      // turning that off while SMART is on to avoid double cleanup + latency.
+      smartTranscription: config.geminiSmartTranscription === true,
+    })
+  }),
+
+  geminiLiveSendAudio: t.procedure
+    .input<{ chunk: string }>()
+    .action(async ({ input }) => {
+      liveSession?.sendPcm16Base64(input.chunk)
+    }),
+
+  geminiLiveStop: t.procedure.action(async () => {
+    const session = liveSession
+    liveSession = null
+    if (!session) return { transcript: "" }
+    const transcript = await session.finish()
+    return { transcript }
+  }),
+
+  geminiLiveAbort: t.procedure.action(async () => {
+    liveSession?.abort()
+    liveSession = null
+    // Cancelled dictation leaves no trace, like the file path: remove any
+    // live-typed draft from the cursor.
+    if (liveTypingActive) {
+      liveTypingActive = false
+      const typed = liveTypedText
+      liveTypedText = ""
+      liveTypeTarget = ""
+      if (typed) {
+        try {
+          await deleteText(graphemeLength(typed))
+        } catch (error) {
+          console.error(`[LIVETYPE] cancel cleanup failed: ${error}`)
         }
       }
-    }),
+    } else {
+      liveTypedText = ""
+      liveTypeTarget = ""
+    }
+  }),
 
   clearHistory: t.procedure
     .input<{ days: number }>()

@@ -9,4 +9,7 @@ export type RendererHandlers = {
 
   updateAvailable: (e: UpdateDownloadedEvent) => void
   navigate: (url: string) => void
+
+  // Gemini Live (main-process session): interim transcript + session errors.
+  geminiLiveUpdate: (e: { kind: "interim" | "error"; text: string }) => void
 }

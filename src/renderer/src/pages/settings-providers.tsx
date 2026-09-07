@@ -168,6 +168,32 @@ export function Component() {
             }}
           />
         </Control>
+
+        <Control label="STT Model (file)" className="px-3">
+          <Input
+            type="text"
+            placeholder="gemini-3.5-transcribe"
+            defaultValue={configQuery.data.geminiSttModel}
+            onChange={(e) => {
+              saveConfig({
+                geminiSttModel: e.currentTarget.value,
+              })
+            }}
+          />
+        </Control>
+
+        <Control label="STT Model (live)" className="px-3">
+          <Input
+            type="text"
+            placeholder="gemini-3.5-transcribe-live"
+            defaultValue={configQuery.data.geminiLiveSttModel}
+            onChange={(e) => {
+              saveConfig({
+                geminiLiveSttModel: e.currentTarget.value,
+              })
+            }}
+          />
+        </Control>
       </ControlGroup>
 
       <ControlGroup title="OpenAI Compat A">

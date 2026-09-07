@@ -8,6 +8,14 @@ export const STT_PROVIDERS = [
     value: "groq",
   },
   {
+    label: "Gemini",
+    value: "gemini",
+  },
+  {
+    label: "Gemini Live",
+    value: "gemini-live",
+  },
+  {
     label: "OpenAI Compat A",
     value: "custom1",
   },

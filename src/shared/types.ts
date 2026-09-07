@@ -29,6 +29,8 @@ export type Config = {
   geminiApiKey?: string
   geminiBaseUrl?: string
   geminiChatModel?: string
+  geminiSttModel?: string
+  geminiLiveSttModel?: string
 
   custom1ApiKey?: string
   custom1BaseUrl?: string
@@ -51,6 +53,16 @@ export type Config = {
   transcriptionLanguage?: string
   transcriptionPrompt?: string
   transcriptionPromptEnabled?: boolean
+
+  // Gemini Live: type settled interim words at the cursor while speaking.
+  // Default on; cleanup/command sessions never live-type.
+  liveTypingEnabled?: boolean
+
+  // Gemini file + live: server-side SMART transcription (disfluency removal,
+  // light grammar cleanup, formatting) instead of strict verbatim output.
+  // Default off (VERBATIM). Overlaps with transcript post-processing — the
+  // settings UI recommends turning that off while this is on.
+  geminiSmartTranscription?: boolean
 
   commandMappings?: CommandMapping[]
 }

@@ -62,18 +62,19 @@ When you trigger the cleanup shortcut **without selecting any text**, Whispo ent
   - **Recordings Folder**:
     - **Windows**: `%APPDATA%\app.whispo\recordings\`
 - **Model Support**:
-    - **Transcription**: Uses OpenAI Whisper (via OpenAI or Groq API).
+    - **Transcription**: OpenAI Whisper (via OpenAI or Groq API), or Gemini (`gemini-3.5-transcribe` one-shot file transcription, `gemini-3.5-transcribe-live` real-time streaming with live typing at the cursor) via a Google AI Studio key.
     - **LLM Processing**: Supports OpenAI, Groq, and Gemini for text post-processing.
 - **Custom API**: Option to use your own custom API URL for transcription services.
 - **Transcription Settings**:
     - **Language Selection**: Choose from 50+ supported languages or use Auto-detect mode. Supports languages including English, Hindi, French, Spanish, German, Japanese, Chinese, Arabic, and many more.
         - ⚠️ **Note for Non-Latin Scripts**: When a specific language is selected for languages with non-Latin scripts (Hindi, Arabic, Chinese, etc.), transcription may be romanized (e.g., "Aap kaise hain?" instead of "आप कैसे हैं?"). For native script output, use **"Auto" (recommended)** which correctly detects and uses the appropriate script.
-    - **Custom Words/Phrases**: Add domain-specific terms, technical vocabulary, or names to improve transcription accuracy. Examples: "ChatGPT, OpenAI, Groq, Whisper, Gemini, API".
+    - **Custom Words/Phrases**: Add domain-specific terms, technical vocabulary, or names to improve transcription accuracy. Examples: "ChatGPT, OpenAI, Groq, Whisper, Gemini, API". Sent as prompt for Whisper providers, or as custom vocabulary for Gemini (file + Live).
         - **Toggle On/Off**: Enable "Use Custom Words" when speaking in the same language as your phrases (typically English). Disable it when switching to other languages to avoid romanization and get native script output.
         - ⚠️ **Best Practice for Silence/Hallucinations**: Using the "Custom Words" feature (Whisper prompt) can sometimes cause silence to be transcribed as gibberish or repetitive text. If you encounter this, we recommend **disabling "Use Custom Words"** and instead using the **Post-Processing Prompt** feature with a prompt like:
             > "Also, correct any misspelled names to these exact spellings: ChatGPT, OpenAI, Groq. Preserve all other text exactly as is."
             
             This approach fixes spellings without introducing hallucinations during silence.
+    - **Smart Transcription (Gemini file + Live)**: Enable **Settings → Transcription → Smart Transcription** for server-side light cleanup (removes "um"/repetitions/false starts, fixes grammar, formats lists) instead of strict verbatim output. While it is on, consider turning off transcript post-processing in **Settings → General** to avoid double cleanup and extra delay.
 
 ### 👨‍💻 Developer Notes
 - **Hallucination Patterns**: There is a list of known hallucination strings (e.g., "Thank you") defined in `src/main/tipc.ts`. These are used to filter out common Whisper hallucinations when using custom prompts. You can update this list in the code if you encounter other persistent hallucinations.

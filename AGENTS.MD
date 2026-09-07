@@ -1,6 +1,6 @@
 # AGENTS.md - AI Agent Context Guide
 
-> **Version**: 0.2.5 | **License**: AGPL-3.0 | **Package Manager**: pnpm@9.12.1
+> **Version**: 0.2.6 | **License**: AGPL-3.0 | **Package Manager**: pnpm@9.12.1
 
 ## Project Identity
 
@@ -116,6 +116,8 @@ pnpm release          # Run release script
 | `keyboard.ts` | Global keyboard shortcuts via Rust binary (rdev), push-to-talk/toggle modes, selection detection |
 | `tipc.ts` | IPC channel definitions, recording creation, transcription, command execution |
 | `llm.ts` | LLM API integration for post-processing and text cleanup |
+| `gemini.ts` | Gemini file transcription (`:generateContent`, AI Studio key) |
+| `gemini-live.ts` | Gemini Live streaming session (Node WebSocket in main process, adaptive finish) |
 | `config.ts` | Configuration storage with defaults |
 | `window.ts` | Window management: main window, panel overlay, setup window |
 | `tray.ts` | System tray with recording controls |
@@ -145,6 +147,7 @@ pnpm release          # Run release script
 |---------|-------------|
 | `listen` | Global keyboard event listener via rdev |
 | `write` | Text typing simulation via enigo |
+| `delete` | Backspace-N-times via enigo (live-typing revisions/cancel) |
 | `copy` | Copy simulation for selection detection |
 
 ### IPC Channels (`@egoist/tipc`)
@@ -180,13 +183,14 @@ type Config = {
   cleanupShortcutMode?: "hold" | "toggle"
   hideDockIcon?: boolean         // macOS only
 
-  sttProviderId?: STT_PROVIDER_ID  // "openai" | "groq" | "custom1" | "custom2"
+  sttProviderId?: STT_PROVIDER_ID  // "openai" | "groq" | "gemini" | "gemini-live" | "custom1" | "custom2"
 
   // Provider settings (OpenAI, Groq, Gemini, Custom1, Custom2)
   {provider}ApiKey?: string
   {provider}BaseUrl?: string
   {provider}SttModel?: string
   {provider}ChatModel?: string
+  geminiLiveSttModel?: string  // Live API model (default: gemini-3.5-transcribe-live)
 
   // Post-processing
   transcriptPostProcessingEnabled?: boolean
@@ -203,6 +207,10 @@ type Config = {
   transcriptionPrompt?: string    // Custom words/phrases
   transcriptionPromptEnabled?: boolean
 
+  // Gemini Transcription extras
+  liveTypingEnabled?: boolean        // Gemini Live: type settled words live (default on)
+  geminiSmartTranscription?: boolean // Gemini file + live: SMART mode cleanup (default off)
+
   // Command mappings
   commandMappings?: CommandMapping[]
 }
@@ -215,6 +223,8 @@ type Config = {
 |----|-------|---------------|
 | `openai` | OpenAI | whisper-1 |
 | `groq` | Groq | whisper-large-v3 |
+| `gemini` | Gemini | gemini-3.5-transcribe (file, `:generateContent`) |
+| `gemini-live` | Gemini Live | gemini-3.5-transcribe-live (streaming, Live API WebSocket in main process) |
 | `custom1` | OpenAI Compat A | (user configured) |
 | `custom2` | OpenAI Compat B | (user configured) |
 
@@ -253,6 +263,14 @@ type Config = {
 - Uses `electron-updater` with GitHub releases
 - Custom feed URL: `electron-releases.umida.co`
 
+### 6. Gemini Transcription (File + Live)
+- **File** (`gemini-3.5-transcribe`): one-shot `:generateContent` with AI Studio key; language + custom vocabulary sent as prompt text
+- **Live** (`gemini-3.5-transcribe-live`): streaming BidiGenerateContent WebSocket in the main process (Node transport); mic PCM streams from the panel via IPC, interim text flows back; release uses adaptive finish (~0.5s: `turnComplete` / settled-final / quiet-transcript exits, 2.5s cap)
+- **Custom vocabulary**: Transcription Settings → Custom Words feeds both paths (structured `customVocabulary` for Live); gated by "Use Custom Words"
+- **SMART mode** (`geminiSmartTranscription`): server-side light cleanup (disfluencies, grammar, formatting) instead of verbatim — structured `mode: "SMART"` for Live, mirrored in prompt form for file; turn off LLM post-processing while on to avoid double cleanup
+- **Live typing** (`liveTypingEnabled`, default on): settled interim words typed at the cursor via Rust `delete`/`write` (grapheme-aware); auto-disabled with post-processing on, in cleanup/command mode, or without macOS accessibility permission
+- Pure builders + mapping live in `src/shared/gemini-transcription.ts` (unit-tested via esbuild + node, no Electron needed)
+
 ## Dependencies
 
 ### Runtime
@@ -262,6 +280,7 @@ type Config = {
 | react / react-dom | UI framework |
 | @egoist/tipc | IPC communication |
 | @google/generative-ai | Gemini API |
+| @google/genai | Gemini Live API (main-process WebSocket) |
 | @tanstack/react-query | Server state management |
 | dayjs | Date formatting |
 | electron-updater | Auto-update |
@@ -307,4 +326,4 @@ type Config = {
 - GitHub: https://github.com/nandan121/whispo-extrasettings
 - Homepage: https://whispo.app
 - License: AGPL-3.0
-- Version: 0.2.5
+- Version: 0.2.6

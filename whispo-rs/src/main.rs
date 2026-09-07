@@ -76,6 +76,16 @@ fn write_text(text: &str) {
     enigo.text(text).unwrap();
 }
 
+fn press_backspace(n: usize) {
+    use enigo::{Enigo, Keyboard, Settings, Key, Direction};
+
+    let mut enigo = Enigo::new(&Settings::default()).unwrap();
+
+    for _ in 0..n {
+        enigo.key(Key::Backspace, Direction::Click).unwrap();
+    }
+}
+
 fn simulate_copy() {
     use enigo::{Enigo, Keyboard, Settings, Key};
 
@@ -116,6 +126,12 @@ fn main() {
     if args.len() > 2 && args[1] == "write" {
         let text = args[2].clone();
         write_text(text.as_str());
+    }
+
+    if args.len() > 2 && args[1] == "delete" {
+        if let Ok(n) = args[2].parse::<usize>() {
+            press_backspace(n);
+        }
     }
 
     if args.len() > 1 && args[1] == "copy" {
