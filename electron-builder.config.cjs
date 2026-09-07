@@ -54,8 +54,8 @@ module.exports = {
     ],
     notarize: process.env.APPLE_TEAM_ID
       ? {
-          teamId: process.env.APPLE_TEAM_ID,
-        }
+        teamId: process.env.APPLE_TEAM_ID,
+      }
       : undefined,
   },
   dmg: {
@@ -72,8 +72,8 @@ module.exports = {
   npmRebuild: false,
   publish: {
     provider: "github",
-    owner: "egoist",
-    repo: "whispo",
+    owner: "nandan121",
+    repo: "whispo-extrasettings",
   },
   removePackageScripts: true,
 }

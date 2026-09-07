@@ -15,8 +15,8 @@ if (import.meta.env.PROD) {
   electronUpdater.autoUpdater.setFeedURL({
     provider: "github",
     host: "electron-releases.umida.co",
-    owner: "egoist",
-    repo: "whispo",
+    owner: "nandan121",
+    repo: "whispo-extrasettings",
   })
 }
 
